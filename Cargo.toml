@@ -2,7 +2,6 @@
 name = "fuel-pbft"
 version = "0.1.0"
 authors = ["Fuel Labs <contact@fuel.sh>"]
-edition = "2021"
 categories = ["cryptography::cryptocurrencies"]
 edition = "2021"
 homepage = "https://fuel.network/"
