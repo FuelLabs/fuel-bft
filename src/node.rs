@@ -1,11 +1,16 @@
-use crate::{Block, Consensus, Key, Message, Network, PeerId, State};
+use crate::{Block, Consensus, Key, Message, Network, PeerId, State, Transaction};
 
 pub trait Node {
-    type Block: Block<PeerId = Self::PeerId>;
+    type Block: Block<PeerId = Self::PeerId, Transaction = Self::Transaction>;
     type Key: Key;
     type Message: Message<Block = Self::Block, Key = Self::Key, PeerId = Self::PeerId>;
-    type Network: Network<PeerId = Self::PeerId, Message = Self::Message>;
+    type Network: Network<
+        PeerId = Self::PeerId,
+        Message = Self::Message,
+        Transaction = Self::Transaction,
+    >;
     type PeerId: PeerId;
+    type Transaction: Transaction;
 
     /// Network ID of the node
     fn id(&self) -> Self::PeerId;

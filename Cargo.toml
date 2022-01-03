@@ -11,4 +11,3 @@ repository = "https://github.com/FuelLabs/fuel-pbft"
 description = "A pBFT scheme for Fuel."
 
 [dependencies]
-fuel-tx = "0.1"

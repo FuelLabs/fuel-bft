@@ -1,4 +1,4 @@
-use crate::{Message, PeerId, TransactionSet};
+use crate::{Message, PeerId, Transaction, TransactionSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -21,12 +21,13 @@ impl Consensus {
 pub trait Network {
     type PeerId: PeerId;
     type Message: Message<PeerId = Self::PeerId>;
+    type Transaction: Transaction;
 
     fn increment_height(height: u64) -> u64;
     fn is_council(&self, height: u64, peer: &Self::PeerId) -> bool;
     fn peers(&self, height: u64) -> usize;
     fn proposer(&self, height: u64) -> &Self::PeerId;
-    fn transaction_set(&self) -> TransactionSet;
+    fn transaction_set(&self) -> TransactionSet<Self::Transaction>;
     fn broadcast(&self, message: &Self::Message);
 
     /// From a height and a count of positive voters, resolves the consensus state.
