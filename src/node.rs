@@ -1,16 +1,12 @@
-use crate::{Block, Consensus, Key, Message, Network, PeerId, State, Transaction};
+use crate::{Block, Consensus, Key, Message, Network, PeerId, State};
 
 pub trait Node {
-    type Block: Block<PeerId = Self::PeerId, Transaction = Self::Transaction>;
+    type Block: Block<Payload = Self::Payload, PeerId = Self::PeerId>;
     type Key: Key;
     type Message: Message<Block = Self::Block, Key = Self::Key, PeerId = Self::PeerId>;
-    type Network: Network<
-        PeerId = Self::PeerId,
-        Message = Self::Message,
-        Transaction = Self::Transaction,
-    >;
+    type Network: Network<Message = Self::Message, Payload = Self::Payload, PeerId = Self::PeerId>;
+    type Payload;
     type PeerId: PeerId;
-    type Transaction: Transaction;
 
     /// Network ID of the node
     fn id(&self) -> Self::PeerId;
@@ -38,9 +34,9 @@ pub trait Node {
     /// Create a new block from a network pool
     fn new_block(&self, network: &Self::Network) -> Self::Block {
         let id = self.id();
-        let txs = network.transaction_set();
+        let payload = network.block_payload();
 
-        Self::Block::new(id, txs)
+        Self::Block::new(id, payload)
     }
 
     /// Evaluate the state count for a given height, including the peers that are in subsequent

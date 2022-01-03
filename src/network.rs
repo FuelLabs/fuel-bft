@@ -1,4 +1,4 @@
-use crate::{Message, PeerId, Transaction, TransactionSet};
+use crate::{Block, Message, PeerId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -19,16 +19,19 @@ impl Consensus {
 }
 
 pub trait Network {
-    type PeerId: PeerId;
+    type Block: Block<Payload = Self::Payload>;
     type Message: Message<PeerId = Self::PeerId>;
-    type Transaction: Transaction;
+    type Payload;
+    type PeerId: PeerId;
 
+    fn broadcast(&self, message: &Self::Message);
     fn increment_height(height: u64) -> u64;
     fn is_council(&self, height: u64, peer: &Self::PeerId) -> bool;
     fn peers(&self, height: u64) -> usize;
     fn proposer(&self, height: u64) -> &Self::PeerId;
-    fn transaction_set(&self) -> TransactionSet<Self::Transaction>;
-    fn broadcast(&self, message: &Self::Message);
+
+    /// Generate the block payload to allow the creation of a new block.
+    fn block_payload(&self) -> Self::Payload;
 
     /// From a height and a count of positive voters, resolves the consensus state.
     ///
