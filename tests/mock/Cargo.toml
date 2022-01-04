@@ -8,7 +8,9 @@ homepage = "https://fuel.network/"
 repository = "https://github.com/FuelLabs/fuel-pbft"
 
 [dependencies]
-curve25519-dalek = "3.2"
+elliptic-curve = "0.11"
+k256 = { version = "0.10", features = [ "arithmetic", "ecdsa" ] }
 fuel-pbft = { path = "../../" }
 hex = "0.4"
-sha2 = "0.9"
+rand = "0.8"
+sha2 = "0.10"

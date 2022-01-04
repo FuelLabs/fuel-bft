@@ -1,22 +1,24 @@
 use fuel_pbft::*;
 
-use curve25519_dalek::constants;
-use curve25519_dalek::ristretto::RistrettoPoint;
-use curve25519_dalek::scalar::Scalar;
-use curve25519_dalek::traits::Identity;
-use sha2::{Digest, Sha512};
+use elliptic_curve::group::prime::PrimeCurveAffine;
+use k256::ecdsa::signature::{Signer, Verifier};
+use k256::ecdsa::{Signature, SigningKey, VerifyingKey};
+use k256::AffinePoint;
+use rand::rngs::StdRng;
+use rand::SeedableRng;
+use sha2::{Digest, Sha256};
 
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MockKey(Scalar);
+#[derive(Clone, PartialEq, Eq)]
+pub struct MockKey(SigningKey);
 
 impl fmt::Debug for MockKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MockKey")
-            .field("key", &hex::encode(self.0.as_bytes()))
+            .field("key", &hex::encode(self.0.to_bytes()))
             .finish()
     }
 }
@@ -26,81 +28,80 @@ impl MockKey {
     where
         P: AsRef<[u8]>,
     {
-        let h = Sha512::new().chain(password);
-        let s = Scalar::from_hash(h);
+        let mut b = [0u8; 32];
 
-        Self(s)
+        Sha256::new()
+            .chain_update(password)
+            .finalize_into((&mut b).into());
+
+        let rng = &mut StdRng::from_seed(b);
+        let key = SigningKey::random(rng);
+
+        Self(key)
     }
 
-    pub fn sign(&self, challenge: &Scalar, message: &[u8]) -> Signature {
-        let c = challenge * &constants::RISTRETTO_BASEPOINT_TABLE;
-        let h = Sha512::new().chain(c.compress().as_bytes()).chain(message);
-        let e = Scalar::from_hash(h);
+    pub fn sign<D>(&self, digest: D) -> MockSignature
+    where
+        D: Digest,
+    {
+        let signature = self.0.sign(&digest.finalize());
 
-        let s = challenge - self.0 * e;
-
-        Signature { s, e }
+        MockSignature(signature)
     }
 }
 
 impl Key for MockKey {
-    type ValidatorId = MockValidator;
+    type ValidatorId = MockValidatorId;
 
     fn validator(&self) -> Self::ValidatorId {
-        MockValidator(&self.0 * &constants::RISTRETTO_BASEPOINT_TABLE)
+        MockValidatorId(self.0.verifying_key())
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Signature {
-    s: Scalar,
-    e: Scalar,
-}
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct MockSignature(Signature);
 
-impl fmt::Debug for Signature {
+impl fmt::Debug for MockSignature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Signature")
-            .field("signature", &"(?)")
+        f.debug_struct("MockSignature")
+            .field("sig", &hex::encode(self.0.as_ref()))
             .finish()
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct MockValidator(RistrettoPoint);
+pub struct MockValidatorId(VerifyingKey);
 
-impl fmt::Debug for MockValidator {
+impl ValidatorId for MockValidatorId {}
+
+impl Default for MockValidatorId {
+    fn default() -> Self {
+        let g = &AffinePoint::generator();
+
+        Self(g.into())
+    }
+}
+
+impl fmt::Debug for MockValidatorId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MockKey")
-            .field("key", &hex::encode(self.0.compress().as_bytes()))
+        f.debug_struct("MockValidatorId")
+            .field("public", &hex::encode(self.0.to_bytes()))
             .finish()
     }
 }
 
-impl MockValidator {
-    pub fn verify(&self, signature: &Signature, message: &[u8]) -> bool {
-        let c = RistrettoPoint::vartime_double_scalar_mul_basepoint(
-            &signature.e,
-            &self.0,
-            &signature.s,
-        );
-        let h = Sha512::new().chain(c.compress().as_bytes()).chain(message);
-        let e = Scalar::from_hash(h);
-
-        signature.e == e
-    }
-}
-
-impl Hash for MockValidator {
+impl Hash for MockValidatorId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.compress().as_bytes().hash(state);
+        self.0.to_bytes().hash(state);
     }
 }
 
-impl ValidatorId for MockValidator {}
-
-impl Default for MockValidator {
-    fn default() -> MockValidator {
-        MockValidator(RistrettoPoint::identity())
+impl MockValidatorId {
+    pub fn verify<D>(&self, signature: &MockSignature, digest: D) -> bool
+    where
+        D: Digest,
+    {
+        self.0.verify(&digest.finalize(), &signature.0).is_ok()
     }
 }
 
@@ -117,23 +118,23 @@ impl Default for BlockPayload {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct MockBlock {
-    owner: MockValidator,
+    owner: MockValidatorId,
     payload: BlockPayload,
 }
 
 impl MockBlock {
-    fn digest(&self) -> Sha512 {
-        Sha512::new()
-            .chain(self.owner.0.compress().as_bytes())
-            .chain(&[self.payload.is_valid as u8])
+    fn digest(&self) -> impl Digest {
+        Sha256::new()
+            .chain_update(self.owner.0.to_bytes())
+            .chain_update(&[self.payload.is_valid as u8])
     }
 }
 
 impl Block for MockBlock {
     type Payload = BlockPayload;
-    type ValidatorId = MockValidator;
+    type ValidatorId = MockValidatorId;
 
-    fn new(owner: MockValidator, payload: BlockPayload) -> Self {
+    fn new(owner: MockValidatorId, payload: BlockPayload) -> Self {
         Self { owner, payload }
     }
 }
@@ -142,17 +143,17 @@ impl Block for MockBlock {
 pub struct MockMessage {
     block: MockBlock,
     round: u64,
-    signature: Signature,
+    signature: MockSignature,
     state: State,
-    validator: MockValidator,
+    validator: MockValidatorId,
 }
 
 impl MockMessage {
-    fn digest(round: u64, state: State, block: &MockBlock) -> Sha512 {
+    fn digest(round: u64, state: State, block: &MockBlock) -> impl Digest {
         block
             .digest()
-            .chain(round.to_be_bytes())
-            .chain(&[state as u8])
+            .chain_update(round.to_be_bytes())
+            .chain_update(&[state as u8])
     }
 }
 
@@ -160,15 +161,12 @@ impl Message for MockMessage {
     type Block = MockBlock;
     type Key = MockKey;
     type Round = u64;
-    type ValidatorId = MockValidator;
+    type ValidatorId = MockValidatorId;
 
     fn new(round: u64, key: Self::Key, state: State, block: Self::Block) -> Self {
         let digest = Self::digest(round, state, &block);
         let validator = key.validator();
-
-        // Insecure implementation for test purposes. Don't do this in production.
-        let challenge = Scalar::from(round);
-        let signature = key.sign(&challenge, &digest.finalize());
+        let signature = key.sign(digest);
 
         Self {
             block,
@@ -202,14 +200,14 @@ impl Message for MockMessage {
     fn is_valid(&self) -> bool {
         let digest = Self::digest(self.round, self.state, &self.block);
 
-        self.validator.verify(&self.signature, &digest.finalize())
+        self.validator.verify(&self.signature, digest)
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct MockNetwork {
     /// Set of validators mapping to a round range
-    validators: HashMap<MockValidator, (u64, u64, MockNode)>,
+    validators: HashMap<MockValidatorId, (u64, u64, MockNode)>,
 }
 
 impl MockNetwork {
@@ -234,7 +232,7 @@ impl MockNetwork {
         self.validators.get(&validator).map(|(_, _, n)| n)
     }
 
-    pub fn validators(&self, round: u64) -> impl Iterator<Item = &MockValidator> {
+    pub fn validators(&self, round: u64) -> impl Iterator<Item = &MockValidatorId> {
         self.validators
             .iter()
             .filter_map(move |(validator, (from, to, _))| {
@@ -248,7 +246,7 @@ impl Network for MockNetwork {
     type Message = MockMessage;
     type Payload = BlockPayload;
     type Round = u64;
-    type ValidatorId = MockValidator;
+    type ValidatorId = MockValidatorId;
 
     fn broadcast(&mut self, message: &Self::Message) {
         let round = message.round();
@@ -287,7 +285,7 @@ impl Network for MockNetwork {
 #[derive(Debug, Clone)]
 pub struct MockNode {
     key: MockKey,
-    validator_state: HashMap<(u64, MockValidator), State>,
+    validator_state: HashMap<(u64, MockValidatorId), State>,
 }
 
 impl MockNode {
@@ -306,14 +304,14 @@ impl Node for MockNode {
     type Network = MockNetwork;
     type Payload = BlockPayload;
     type Round = u64;
-    type ValidatorId = MockValidator;
+    type ValidatorId = MockValidatorId;
 
     fn id(&self) -> Self::ValidatorId {
         self.key.validator()
     }
 
     fn key(&self) -> Self::Key {
-        self.key
+        self.key.clone()
     }
 
     fn validator_state(&self, round: u64, validator: &Self::ValidatorId) -> Option<State> {
