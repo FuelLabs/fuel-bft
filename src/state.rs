@@ -4,7 +4,7 @@ use core::cmp::Ordering;
 #[repr(u8)]
 pub enum State {
     Reject = 0x00,
-    NewHeight = 0x01,
+    NewRound = 0x01,
     Propose = 0x02,
     Prevote = 0x03,
     Precommit = 0x04,
@@ -17,25 +17,25 @@ impl PartialOrd for State {
             (Self::Reject, _) => Some(Ordering::Greater),
             (_, Self::Reject) => Some(Ordering::Less),
 
-            (Self::NewHeight, Self::NewHeight) => Some(Ordering::Equal),
-            (Self::NewHeight, _) => Some(Ordering::Less),
+            (Self::NewRound, Self::NewRound) => Some(Ordering::Equal),
+            (Self::NewRound, _) => Some(Ordering::Less),
 
-            (Self::Propose, Self::NewHeight) => Some(Ordering::Greater),
+            (Self::Propose, Self::NewRound) => Some(Ordering::Greater),
             (Self::Propose, Self::Propose) => Some(Ordering::Equal),
             (Self::Propose, _) => Some(Ordering::Less),
 
-            (Self::Prevote, Self::NewHeight) => Some(Ordering::Greater),
+            (Self::Prevote, Self::NewRound) => Some(Ordering::Greater),
             (Self::Prevote, Self::Propose) => Some(Ordering::Greater),
             (Self::Prevote, Self::Prevote) => Some(Ordering::Equal),
             (Self::Prevote, _) => Some(Ordering::Less),
 
-            (Self::Precommit, Self::NewHeight) => Some(Ordering::Greater),
+            (Self::Precommit, Self::NewRound) => Some(Ordering::Greater),
             (Self::Precommit, Self::Propose) => Some(Ordering::Greater),
             (Self::Precommit, Self::Prevote) => Some(Ordering::Greater),
             (Self::Precommit, Self::Precommit) => Some(Ordering::Equal),
             (Self::Precommit, _) => Some(Ordering::Less),
 
-            (Self::Commit, Self::NewHeight) => Some(Ordering::Greater),
+            (Self::Commit, Self::NewRound) => Some(Ordering::Greater),
             (Self::Commit, Self::Propose) => Some(Ordering::Greater),
             (Self::Commit, Self::Prevote) => Some(Ordering::Greater),
             (Self::Commit, Self::Precommit) => Some(Ordering::Greater),
@@ -47,7 +47,7 @@ impl PartialOrd for State {
 impl State {
     pub const fn from_u8(byte: u8) -> Self {
         match byte {
-            0x01 => Self::NewHeight,
+            0x01 => Self::NewRound,
             0x02 => Self::Propose,
             0x03 => Self::Prevote,
             0x04 => Self::Precommit,
@@ -57,7 +57,7 @@ impl State {
     }
 
     pub const fn initial() -> Self {
-        Self::NewHeight
+        Self::NewRound
     }
 
     pub const fn is_commit(&self) -> bool {
@@ -82,7 +82,7 @@ impl State {
     pub const fn increment(self) -> Option<Self> {
         match self {
             Self::Reject => None,
-            Self::NewHeight => Some(Self::Propose),
+            Self::NewRound => Some(Self::Propose),
             Self::Propose => Some(Self::Prevote),
             Self::Prevote => Some(Self::Precommit),
             Self::Precommit => Some(Self::Commit),

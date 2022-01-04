@@ -141,17 +141,17 @@ impl Block for MockBlock {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MockMessage {
     block: MockBlock,
-    height: u64,
+    round: u64,
     signature: Signature,
     state: State,
     peer: RistrettoPeerId,
 }
 
 impl MockMessage {
-    fn digest(height: u64, state: State, block: &MockBlock) -> Sha512 {
+    fn digest(round: u64, state: State, block: &MockBlock) -> Sha512 {
         block
             .digest()
-            .chain(height.to_be_bytes())
+            .chain(round.to_be_bytes())
             .chain(&[state as u8])
     }
 }
@@ -160,18 +160,19 @@ impl Message for MockMessage {
     type Block = MockBlock;
     type Key = EdKey;
     type PeerId = RistrettoPeerId;
+    type Round = u64;
 
-    fn new(height: u64, key: Self::Key, state: State, block: Self::Block) -> Self {
-        let digest = Self::digest(height, state, &block);
+    fn new(round: u64, key: Self::Key, state: State, block: Self::Block) -> Self {
+        let digest = Self::digest(round, state, &block);
         let peer = key.peer();
 
         // Insecure implementation for test purposes. Don't do this in production.
-        let challenge = Scalar::from(height);
+        let challenge = Scalar::from(round);
         let signature = key.sign(&challenge, &digest.finalize());
 
         Self {
             block,
-            height,
+            round,
             signature,
             state,
             peer,
@@ -186,8 +187,8 @@ impl Message for MockMessage {
         self.block.clone()
     }
 
-    fn height(&self) -> u64 {
-        self.height
+    fn round(&self) -> u64 {
+        self.round
     }
 
     fn state(&self) -> State {
@@ -199,7 +200,7 @@ impl Message for MockMessage {
     }
 
     fn is_valid(&self) -> bool {
-        let digest = Self::digest(self.height, self.state, &self.block);
+        let digest = Self::digest(self.round, self.state, &self.block);
 
         self.peer.verify(&self.signature, &digest.finalize())
     }
@@ -207,38 +208,36 @@ impl Message for MockMessage {
 
 #[derive(Debug, Default, Clone)]
 pub struct MockNetwork {
-    /// Set of council validators mapping to a height range
+    /// Set of council validators mapping to a round range
     council: HashMap<RistrettoPeerId, (u64, u64, MockNode)>,
 }
 
 impl MockNetwork {
-    pub fn key_from_height(height: u64) -> EdKey {
-        EdKey::new(format!("height {}", height))
+    pub fn key_from_round(round: u64) -> EdKey {
+        EdKey::new(format!("round {}", round))
     }
 
-    pub fn add_node(&mut self, height: u64, from: u64, validity: u64) {
+    pub fn add_node(&mut self, round: u64, from: u64, validity: u64) {
         let to = from + validity;
 
-        let key = Self::key_from_height(height);
+        let key = Self::key_from_round(round);
         let peer = key.peer();
         let node = MockNode::new(key);
 
         self.council.insert(peer, (from, to, node));
     }
 
-    pub fn node(&self, height: u64) -> Option<&MockNode> {
-        let key = Self::key_from_height(height);
+    pub fn node(&self, round: u64) -> Option<&MockNode> {
+        let key = Self::key_from_round(round);
         let peer = key.peer();
 
         self.council.get(&peer).map(|(_, _, n)| n)
     }
 
-    pub fn council_members(&self, height: u64) -> impl Iterator<Item = &RistrettoPeerId> {
+    pub fn council_members(&self, round: u64) -> impl Iterator<Item = &RistrettoPeerId> {
         self.council
             .iter()
-            .filter_map(move |(peer, (from, to, _))| {
-                (*from <= height && height < *to).then(|| peer)
-            })
+            .filter_map(move |(peer, (from, to, _))| (*from <= round && round < *to).then(|| peer))
     }
 }
 
@@ -247,34 +246,35 @@ impl Network for MockNetwork {
     type Message = MockMessage;
     type Payload = BlockPayload;
     type PeerId = RistrettoPeerId;
+    type Round = u64;
 
     fn broadcast(&mut self, message: &Self::Message) {
-        let height = message.height();
+        let round = message.round();
 
         let network = self as *mut MockNetwork;
 
         self.council
             .iter_mut()
-            .filter_map(|(_, (from, to, node))| (*from <= height && height < *to).then(|| node))
+            .filter_map(|(_, (from, to, node))| (*from <= round && round < *to).then(|| node))
             .for_each(|node| node.receive_message(unsafe { network.as_mut().unwrap() }, message));
     }
 
-    fn increment_height(height: u64) -> u64 {
-        height + 1
+    fn increment_round(round: u64) -> u64 {
+        round + 1
     }
 
-    fn is_council(&self, height: u64, peer: &Self::PeerId) -> bool {
-        self.council_members(height).any(|p| p == peer)
+    fn is_council(&self, round: u64, peer: &Self::PeerId) -> bool {
+        self.council_members(round).any(|p| p == peer)
     }
 
-    fn peers(&self, height: u64) -> usize {
-        self.council_members(height).count()
+    fn peers(&self, round: u64) -> usize {
+        self.council_members(round).count()
     }
 
-    fn proposer(&self, height: u64) -> Option<&Self::PeerId> {
-        let peer = Self::key_from_height(height).peer();
+    fn proposer(&self, round: u64) -> Option<&Self::PeerId> {
+        let peer = Self::key_from_round(round).peer();
 
-        self.council_members(height).find(|p| p == &&peer)
+        self.council_members(round).find(|p| p == &&peer)
     }
 
     fn block_payload(&self) -> Self::Payload {
@@ -304,6 +304,7 @@ impl Node for MockNode {
     type Network = MockNetwork;
     type Payload = BlockPayload;
     type PeerId = RistrettoPeerId;
+    type Round = u64;
 
     fn id(&self) -> Self::PeerId {
         self.key.peer()
@@ -313,18 +314,18 @@ impl Node for MockNode {
         self.key
     }
 
-    fn peer_state(&self, height: u64, peer: &Self::PeerId) -> Option<State> {
-        self.peer_state.get(&(height, *peer)).copied()
+    fn peer_state(&self, round: u64, peer: &Self::PeerId) -> Option<State> {
+        self.peer_state.get(&(round, *peer)).copied()
     }
 
-    fn set_peer_state(&mut self, height: u64, peer: &Self::PeerId, state: State) {
-        self.peer_state.insert((height, *peer), state);
+    fn set_peer_state(&mut self, round: u64, peer: &Self::PeerId, state: State) {
+        self.peer_state.insert((round, *peer), state);
     }
 
-    fn state_count(&self, height: u64, state: State) -> usize {
+    fn state_count(&self, round: u64, state: State) -> usize {
         self.peer_state
             .iter()
-            .filter(|((h, _), s)| h == &height && s == &&state)
+            .filter(|((h, _), s)| h == &round && s == &&state)
             .count()
     }
 

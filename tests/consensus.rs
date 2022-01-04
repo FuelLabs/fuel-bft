@@ -16,23 +16,23 @@ fn consensus() {
     }
 
     // Pick a node and start the engine
-    let key = MockNetwork::key_from_height(nodes - 1);
-    let message = MockMessage::new(0, key, State::NewHeight, Default::default());
+    let key = MockNetwork::key_from_round(nodes - 1);
+    let message = MockMessage::new(0, key, State::NewRound, Default::default());
 
     network.broadcast(&message);
 
-    for height in 0..nodes {
+    for round in 0..nodes {
         for node in 0..nodes {
             assert_eq!(
                 Some(State::Commit),
-                network.node(node).expect("Node added").state(height)
+                network.node(node).expect("Node added").state(round)
             );
         }
     }
 
     for node in 0..nodes {
         assert_eq!(
-            Some(State::NewHeight),
+            Some(State::NewRound),
             network.node(node).expect("Node added").state(nodes)
         );
     }
@@ -49,8 +49,8 @@ fn consensus_fails() {
 
     assert!(network.node(1).expect("Node added").state(1).is_none());
 
-    let key = MockNetwork::key_from_height(3);
-    let message = MockMessage::new(1, key, State::NewHeight, Default::default());
+    let key = MockNetwork::key_from_round(3);
+    let message = MockMessage::new(1, key, State::NewRound, Default::default());
 
     network.broadcast(&message);
 

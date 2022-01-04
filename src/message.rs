@@ -1,15 +1,16 @@
-use crate::{Block, Key, PeerId, State};
+use crate::{Block, Key, PeerId, Round, State};
 
 pub trait Message {
     type Block: Block;
     type Key: Key;
     type PeerId: PeerId;
+    type Round: Round;
 
-    fn new(height: u64, key: Self::Key, state: State, block: Self::Block) -> Self;
+    fn new(round: Self::Round, key: Self::Key, state: State, block: Self::Block) -> Self;
 
     fn block(&self) -> &Self::Block;
     fn owned_block(&self) -> Self::Block;
-    fn height(&self) -> u64;
+    fn round(&self) -> Self::Round;
     fn state(&self) -> State;
 
     /// Author of the message
