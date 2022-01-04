@@ -1,3 +1,5 @@
+#![no_std]
+
 mod block;
 mod key;
 mod message;

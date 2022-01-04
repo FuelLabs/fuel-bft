@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord)]
 #[repr(u8)]
