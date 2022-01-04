@@ -1,7 +1,7 @@
-use crate::PeerId;
+use crate::ValidatorId;
 
 pub trait Key {
-    type PeerId: PeerId;
+    type ValidatorId: ValidatorId;
 
-    fn peer(&self) -> Self::PeerId;
+    fn validator(&self) -> Self::ValidatorId;
 }

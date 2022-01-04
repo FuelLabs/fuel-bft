@@ -1,4 +1,4 @@
-use crate::{Block, Message, PeerId, Round};
+use crate::{Block, Message, Round, ValidatorId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -24,16 +24,16 @@ impl Consensus {
 
 pub trait Network {
     type Block: Block<Payload = Self::Payload>;
-    type Message: Message<PeerId = Self::PeerId>;
+    type Message: Message<ValidatorId = Self::ValidatorId>;
     type Payload;
-    type PeerId: PeerId;
     type Round: Round;
+    type ValidatorId: ValidatorId;
 
     fn broadcast(&mut self, message: &Self::Message);
     fn increment_round(round: Self::Round) -> Self::Round;
-    fn is_council(&self, round: Self::Round, peer: &Self::PeerId) -> bool;
-    fn peers(&self, round: Self::Round) -> usize;
-    fn proposer(&self, round: Self::Round) -> Option<&Self::PeerId>;
+    fn is_validator(&self, round: Self::Round, validator: &Self::ValidatorId) -> bool;
+    fn validators(&self, round: Self::Round) -> usize;
+    fn proposer(&self, round: Self::Round) -> Option<&Self::ValidatorId>;
 
     /// Generate the block payload to allow the creation of a new block.
     fn block_payload(&self) -> Self::Payload;
@@ -42,10 +42,10 @@ pub trait Network {
     ///
     /// Will not evaluate negative voters because this is handled by the protocol timeout.
     fn consensus(&self, round: Self::Round, count: usize) -> Consensus {
-        let peers = self.peers(round);
+        let validators = self.validators(round);
 
-        let minimum = peers > 3;
-        let consensus = peers * 2 / 3;
+        let minimum = validators > 3;
+        let consensus = validators * 2 / 3;
 
         if !minimum {
             Consensus::Reject

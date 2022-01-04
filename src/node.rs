@@ -1,59 +1,64 @@
-use crate::{Block, Consensus, Key, Message, Network, PeerId, Round, State};
+use crate::{Block, Consensus, Key, Message, Network, Round, State, ValidatorId};
 
 pub trait Node {
-    type Block: Block<Payload = Self::Payload, PeerId = Self::PeerId>;
+    type Block: Block<Payload = Self::Payload, ValidatorId = Self::ValidatorId>;
     type Key: Key;
     type Message: Message<
         Block = Self::Block,
         Key = Self::Key,
-        PeerId = Self::PeerId,
+        ValidatorId = Self::ValidatorId,
         Round = Self::Round,
     >;
     type Network: Network<
         Message = Self::Message,
         Payload = Self::Payload,
-        PeerId = Self::PeerId,
+        ValidatorId = Self::ValidatorId,
         Round = Self::Round,
     >;
     type Payload;
-    type PeerId: PeerId;
     type Round: Round;
+    type ValidatorId: ValidatorId;
 
     /// Network ID of the node
-    fn id(&self) -> Self::PeerId;
+    fn id(&self) -> Self::ValidatorId;
 
     /// Secret signature key of the node
     fn key(&self) -> Self::Key;
 
-    /// Fetch the current state of a peer for a given round
-    fn peer_state(&self, round: Self::Round, peer: &Self::PeerId) -> Option<State>;
+    /// Fetch the current state of a validator for a given round
+    fn validator_state(&self, round: Self::Round, validator: &Self::ValidatorId) -> Option<State>;
 
-    /// Set the network state of a peer for a given round
-    fn set_peer_state(&mut self, round: Self::Round, peer: &Self::PeerId, state: State);
+    /// Set the network state of a validator for a given round
+    fn set_validator_state(
+        &mut self,
+        round: Self::Round,
+        validator: &Self::ValidatorId,
+        state: State,
+    );
 
     /// State count for a given round
     fn state_count(&self, round: Self::Round, state: State) -> usize;
 
     fn validate_block(&self, block: &Self::Block) -> bool;
 
-    /// Upgrade a peer state, returning true if there was a change
-    fn upgrade_peer_state(
+    /// Upgrade a validator state, returning true if there was a change
+    fn upgrade_validator_state(
         &mut self,
         round: Self::Round,
-        peer: &Self::PeerId,
+        validator: &Self::ValidatorId,
         state: State,
     ) -> bool {
-        let peer_state = self.peer_state(round, peer);
+        let validator_state = self.validator_state(round, validator);
 
-        match peer_state {
+        match validator_state {
             None => {
-                self.set_peer_state(round, peer, state);
+                self.set_validator_state(round, validator, state);
 
                 true
             }
 
             Some(s) if state > s => {
-                self.set_peer_state(round, peer, state);
+                self.set_validator_state(round, validator, state);
 
                 true
             }
@@ -70,7 +75,7 @@ pub trait Node {
         network: &mut Self::Network,
         block: Self::Block,
     ) {
-        if self.upgrade_peer_state(round, &self.id(), state) {
+        if self.upgrade_validator_state(round, &self.id(), state) {
             let key = self.key();
 
             let reply = Self::Message::new(round, key, state, block);
@@ -81,9 +86,9 @@ pub trait Node {
 
     /// Current state of the node for a given round
     fn state(&self, round: Self::Round) -> Option<State> {
-        let peer = self.id();
+        let validator = self.id();
 
-        self.peer_state(round, &peer)
+        self.validator_state(round, &validator)
     }
 
     /// Create a new block from a network pool
@@ -94,7 +99,7 @@ pub trait Node {
         Self::Block::new(id, payload)
     }
 
-    /// Evaluate the state count for a given round, including the peers that are in subsequent
+    /// Evaluate the state count for a given round, including the validators that are in subsequent
     /// states.
     fn evaluate_state_count(&self, round: Self::Round, state: State) -> usize {
         let current = self.state_count(round, state);
@@ -106,15 +111,15 @@ pub trait Node {
     fn receive_message(&mut self, network: &mut Self::Network, message: &Self::Message) {
         let block = message.block();
         let round = message.round();
-        let peer = message.peer();
+        let validator = message.validator();
         let proposed_state = message.state();
 
         // Ignore messages produced by self
-        if peer == &self.id() {
+        if validator == &self.id() {
             return ();
         }
 
-        if !network.is_council(round, peer) || !message.is_valid() {
+        if !network.is_validator(round, validator) || !message.is_valid() {
             return ();
         }
 
@@ -133,9 +138,9 @@ pub trait Node {
             return ();
         }
 
-        self.upgrade_peer_state(round, peer, proposed_state);
+        self.upgrade_validator_state(round, validator, proposed_state);
 
-        if proposed_state.is_propose() && Some(peer) == network.proposer(round) {
+        if proposed_state.is_propose() && Some(validator) == network.proposer(round) {
             self.upgrade_state(round, State::Propose, network, message.owned_block());
 
             return ();

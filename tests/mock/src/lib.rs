@@ -11,17 +11,17 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EdKey(Scalar);
+pub struct MockKey(Scalar);
 
-impl fmt::Debug for EdKey {
+impl fmt::Debug for MockKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EdKey")
+        f.debug_struct("MockKey")
             .field("key", &hex::encode(self.0.as_bytes()))
             .finish()
     }
 }
 
-impl EdKey {
+impl MockKey {
     pub fn new<P>(password: P) -> Self
     where
         P: AsRef<[u8]>,
@@ -43,11 +43,11 @@ impl EdKey {
     }
 }
 
-impl Key for EdKey {
-    type PeerId = RistrettoPeerId;
+impl Key for MockKey {
+    type ValidatorId = MockValidator;
 
-    fn peer(&self) -> Self::PeerId {
-        RistrettoPeerId(&self.0 * &constants::RISTRETTO_BASEPOINT_TABLE)
+    fn validator(&self) -> Self::ValidatorId {
+        MockValidator(&self.0 * &constants::RISTRETTO_BASEPOINT_TABLE)
     }
 }
 
@@ -66,17 +66,17 @@ impl fmt::Debug for Signature {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct RistrettoPeerId(RistrettoPoint);
+pub struct MockValidator(RistrettoPoint);
 
-impl fmt::Debug for RistrettoPeerId {
+impl fmt::Debug for MockValidator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("EdKey")
+        f.debug_struct("MockKey")
             .field("key", &hex::encode(self.0.compress().as_bytes()))
             .finish()
     }
 }
 
-impl RistrettoPeerId {
+impl MockValidator {
     pub fn verify(&self, signature: &Signature, message: &[u8]) -> bool {
         let c = RistrettoPoint::vartime_double_scalar_mul_basepoint(
             &signature.e,
@@ -90,17 +90,17 @@ impl RistrettoPeerId {
     }
 }
 
-impl Hash for RistrettoPeerId {
+impl Hash for MockValidator {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.compress().as_bytes().hash(state);
     }
 }
 
-impl PeerId for RistrettoPeerId {}
+impl ValidatorId for MockValidator {}
 
-impl Default for RistrettoPeerId {
-    fn default() -> RistrettoPeerId {
-        RistrettoPeerId(RistrettoPoint::identity())
+impl Default for MockValidator {
+    fn default() -> MockValidator {
+        MockValidator(RistrettoPoint::identity())
     }
 }
 
@@ -117,7 +117,7 @@ impl Default for BlockPayload {
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct MockBlock {
-    owner: RistrettoPeerId,
+    owner: MockValidator,
     payload: BlockPayload,
 }
 
@@ -130,10 +130,10 @@ impl MockBlock {
 }
 
 impl Block for MockBlock {
-    type PeerId = RistrettoPeerId;
     type Payload = BlockPayload;
+    type ValidatorId = MockValidator;
 
-    fn new(owner: RistrettoPeerId, payload: BlockPayload) -> Self {
+    fn new(owner: MockValidator, payload: BlockPayload) -> Self {
         Self { owner, payload }
     }
 }
@@ -144,7 +144,7 @@ pub struct MockMessage {
     round: u64,
     signature: Signature,
     state: State,
-    peer: RistrettoPeerId,
+    validator: MockValidator,
 }
 
 impl MockMessage {
@@ -158,13 +158,13 @@ impl MockMessage {
 
 impl Message for MockMessage {
     type Block = MockBlock;
-    type Key = EdKey;
-    type PeerId = RistrettoPeerId;
+    type Key = MockKey;
     type Round = u64;
+    type ValidatorId = MockValidator;
 
     fn new(round: u64, key: Self::Key, state: State, block: Self::Block) -> Self {
         let digest = Self::digest(round, state, &block);
-        let peer = key.peer();
+        let validator = key.validator();
 
         // Insecure implementation for test purposes. Don't do this in production.
         let challenge = Scalar::from(round);
@@ -175,7 +175,7 @@ impl Message for MockMessage {
             round,
             signature,
             state,
-            peer,
+            validator,
         }
     }
 
@@ -195,49 +195,51 @@ impl Message for MockMessage {
         self.state
     }
 
-    fn peer(&self) -> &Self::PeerId {
-        &self.peer
+    fn validator(&self) -> &Self::ValidatorId {
+        &self.validator
     }
 
     fn is_valid(&self) -> bool {
         let digest = Self::digest(self.round, self.state, &self.block);
 
-        self.peer.verify(&self.signature, &digest.finalize())
+        self.validator.verify(&self.signature, &digest.finalize())
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct MockNetwork {
-    /// Set of council validators mapping to a round range
-    council: HashMap<RistrettoPeerId, (u64, u64, MockNode)>,
+    /// Set of validators mapping to a round range
+    validators: HashMap<MockValidator, (u64, u64, MockNode)>,
 }
 
 impl MockNetwork {
-    pub fn key_from_round(round: u64) -> EdKey {
-        EdKey::new(format!("round {}", round))
+    pub fn key_from_round(round: u64) -> MockKey {
+        MockKey::new(format!("round {}", round))
     }
 
     pub fn add_node(&mut self, round: u64, from: u64, validity: u64) {
         let to = from + validity;
 
         let key = Self::key_from_round(round);
-        let peer = key.peer();
+        let validator = key.validator();
         let node = MockNode::new(key);
 
-        self.council.insert(peer, (from, to, node));
+        self.validators.insert(validator, (from, to, node));
     }
 
     pub fn node(&self, round: u64) -> Option<&MockNode> {
         let key = Self::key_from_round(round);
-        let peer = key.peer();
+        let validator = key.validator();
 
-        self.council.get(&peer).map(|(_, _, n)| n)
+        self.validators.get(&validator).map(|(_, _, n)| n)
     }
 
-    pub fn council_members(&self, round: u64) -> impl Iterator<Item = &RistrettoPeerId> {
-        self.council
+    pub fn validators(&self, round: u64) -> impl Iterator<Item = &MockValidator> {
+        self.validators
             .iter()
-            .filter_map(move |(peer, (from, to, _))| (*from <= round && round < *to).then(|| peer))
+            .filter_map(move |(validator, (from, to, _))| {
+                (*from <= round && round < *to).then(|| validator)
+            })
     }
 }
 
@@ -245,15 +247,15 @@ impl Network for MockNetwork {
     type Block = MockBlock;
     type Message = MockMessage;
     type Payload = BlockPayload;
-    type PeerId = RistrettoPeerId;
     type Round = u64;
+    type ValidatorId = MockValidator;
 
     fn broadcast(&mut self, message: &Self::Message) {
         let round = message.round();
 
         let network = self as *mut MockNetwork;
 
-        self.council
+        self.validators
             .iter_mut()
             .filter_map(|(_, (from, to, node))| (*from <= round && round < *to).then(|| node))
             .for_each(|node| node.receive_message(unsafe { network.as_mut().unwrap() }, message));
@@ -263,18 +265,18 @@ impl Network for MockNetwork {
         round + 1
     }
 
-    fn is_council(&self, round: u64, peer: &Self::PeerId) -> bool {
-        self.council_members(round).any(|p| p == peer)
+    fn is_validator(&self, round: u64, validator: &Self::ValidatorId) -> bool {
+        self.validators(round).any(|p| p == validator)
     }
 
-    fn peers(&self, round: u64) -> usize {
-        self.council_members(round).count()
+    fn validators(&self, round: u64) -> usize {
+        self.validators(round).count()
     }
 
-    fn proposer(&self, round: u64) -> Option<&Self::PeerId> {
-        let peer = Self::key_from_round(round).peer();
+    fn proposer(&self, round: u64) -> Option<&Self::ValidatorId> {
+        let validator = Self::key_from_round(round).validator();
 
-        self.council_members(round).find(|p| p == &&peer)
+        self.validators(round).find(|p| p == &&validator)
     }
 
     fn block_payload(&self) -> Self::Payload {
@@ -284,46 +286,46 @@ impl Network for MockNetwork {
 
 #[derive(Debug, Clone)]
 pub struct MockNode {
-    key: EdKey,
-    peer_state: HashMap<(u64, RistrettoPeerId), State>,
+    key: MockKey,
+    validator_state: HashMap<(u64, MockValidator), State>,
 }
 
 impl MockNode {
-    pub fn new(key: EdKey) -> Self {
+    pub fn new(key: MockKey) -> Self {
         Self {
             key,
-            peer_state: Default::default(),
+            validator_state: Default::default(),
         }
     }
 }
 
 impl Node for MockNode {
     type Block = MockBlock;
-    type Key = EdKey;
+    type Key = MockKey;
     type Message = MockMessage;
     type Network = MockNetwork;
     type Payload = BlockPayload;
-    type PeerId = RistrettoPeerId;
     type Round = u64;
+    type ValidatorId = MockValidator;
 
-    fn id(&self) -> Self::PeerId {
-        self.key.peer()
+    fn id(&self) -> Self::ValidatorId {
+        self.key.validator()
     }
 
     fn key(&self) -> Self::Key {
         self.key
     }
 
-    fn peer_state(&self, round: u64, peer: &Self::PeerId) -> Option<State> {
-        self.peer_state.get(&(round, *peer)).copied()
+    fn validator_state(&self, round: u64, validator: &Self::ValidatorId) -> Option<State> {
+        self.validator_state.get(&(round, *validator)).copied()
     }
 
-    fn set_peer_state(&mut self, round: u64, peer: &Self::PeerId, state: State) {
-        self.peer_state.insert((round, *peer), state);
+    fn set_validator_state(&mut self, round: u64, validator: &Self::ValidatorId, state: State) {
+        self.validator_state.insert((round, *validator), state);
     }
 
     fn state_count(&self, round: u64, state: State) -> usize {
-        self.peer_state
+        self.validator_state
             .iter()
             .filter(|((h, _), s)| h == &round && s == &&state)
             .count()
