@@ -22,10 +22,12 @@ fn consensus() {
     network.broadcast(&message);
 
     for height in 0..nodes {
-        assert_eq!(
-            Some(State::Commit),
-            network.node(1).expect("Node added").state(height)
-        );
+        for node in 0..nodes {
+            assert_eq!(
+                Some(State::Commit),
+                network.node(node).expect("Node added").state(height)
+            );
+        }
     }
 
     for node in 0..nodes {
