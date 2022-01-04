@@ -16,6 +16,10 @@ impl Consensus {
             _ => Self::Reject,
         }
     }
+
+    pub const fn is_inconclusive(&self) -> bool {
+        matches!(self, Self::Inconclusive)
+    }
 }
 
 pub trait Network {
@@ -24,11 +28,11 @@ pub trait Network {
     type Payload;
     type PeerId: PeerId;
 
-    fn broadcast(&self, message: &Self::Message);
+    fn broadcast(&mut self, message: &Self::Message);
     fn increment_height(height: u64) -> u64;
     fn is_council(&self, height: u64, peer: &Self::PeerId) -> bool;
     fn peers(&self, height: u64) -> usize;
-    fn proposer(&self, height: u64) -> &Self::PeerId;
+    fn proposer(&self, height: u64) -> Option<&Self::PeerId>;
 
     /// Generate the block payload to allow the creation of a new block.
     fn block_payload(&self) -> Self::Payload;

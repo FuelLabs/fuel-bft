@@ -1,16 +1,14 @@
 [package]
-name = "fuel-pbft"
+name = "fuel-pbft-mock"
 version = "0.1.0"
 authors = ["Fuel Labs <contact@fuel.sh>"]
 categories = ["cryptography::cryptocurrencies"]
 edition = "2021"
 homepage = "https://fuel.network/"
-keywords = ["blockchain", "cryptocurrencies", "fuel-vm"]
-license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-pbft"
-description = "A pBFT scheme for Fuel."
 
 [dependencies]
-
-[dev-dependencies]
-fuel-pbft-mock = { path = "tests/mock" }
+curve25519-dalek = "3.2"
+fuel-pbft = { path = "../../" }
+hex = "0.4"
+sha2 = "0.9"

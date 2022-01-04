@@ -14,12 +14,6 @@ pub trait Node {
     /// Secret signature key of the node
     fn key(&self) -> Self::Key;
 
-    /// Current state of the node for a given height
-    fn state(&self, height: u64) -> Option<State>;
-
-    /// Set the network state of a peer for a given height
-    fn set_state(&mut self, height: u64, state: State);
-
     /// Fetch the current state of a peer for a given height
     fn peer_state(&self, height: u64, peer: &Self::PeerId) -> Option<State>;
 
@@ -30,6 +24,51 @@ pub trait Node {
     fn state_count(&self, height: u64, state: State) -> usize;
 
     fn validate_block(&self, block: &Self::Block) -> bool;
+
+    /// Upgrade a peer state, returning true if there was a change
+    fn upgrade_peer_state(&mut self, height: u64, peer: &Self::PeerId, state: State) -> bool {
+        let peer_state = self.peer_state(height, peer);
+
+        match peer_state {
+            None => {
+                self.set_peer_state(height, peer, state);
+
+                true
+            }
+
+            Some(s) if state > s => {
+                self.set_peer_state(height, peer, state);
+
+                true
+            }
+
+            _ => false,
+        }
+    }
+
+    /// Upgrade the node state, returning true if there was a change
+    fn upgrade_state(
+        &mut self,
+        height: u64,
+        state: State,
+        network: &mut Self::Network,
+        block: Self::Block,
+    ) {
+        if self.upgrade_peer_state(height, &self.id(), state) {
+            let key = self.key();
+
+            let reply = Self::Message::new(height, key, state, block);
+
+            network.broadcast(&reply);
+        }
+    }
+
+    /// Current state of the node for a given height
+    fn state(&self, height: u64) -> Option<State> {
+        let peer = self.id();
+
+        self.peer_state(height, &peer)
+    }
 
     /// Create a new block from a network pool
     fn new_block(&self, network: &Self::Network) -> Self::Block {
@@ -48,122 +87,92 @@ pub trait Node {
         current + subsequent
     }
 
-    fn receive_message(&mut self, network: &Self::Network, message: &Self::Message) {
+    fn receive_message(&mut self, network: &mut Self::Network, message: &Self::Message) {
         let block = message.block();
         let height = message.height();
         let peer = message.peer();
         let proposed_state = message.state();
 
+        // Ignore messages produced by self
+        if peer == &self.id() {
+            return ();
+        }
+
         if !network.is_council(height, peer) || !message.is_valid() {
             return ();
         }
 
-        if proposed_state.is_propose() && peer != network.proposer(height) {
-            return ();
-        }
+        if let Some(state) = self.state(height) {
+            if state.is_reject() {
+                return ();
+            }
 
-        let current_state = self.state(height).unwrap_or(State::initial());
-
-        if current_state.is_reject() {
-            return ();
-        }
-
-        // Can discard any previous state since it won't affect the current consensus state
-        if current_state > proposed_state {
-            return ();
+            // Can discard any previous state since it won't affect the current consensus state
+            if state > proposed_state {
+                return ();
+            }
         }
 
         if !self.validate_block(block) {
             return ();
         }
 
-        self.set_peer_state(height, peer, proposed_state);
+        self.upgrade_peer_state(height, peer, proposed_state);
 
-        let next_height = Self::Network::increment_height(height);
+        if proposed_state.is_propose() && Some(peer) == network.proposer(height) {
+            self.upgrade_state(height, State::Propose, network, message.owned_block());
 
-        // Attempt to upgrade the state
-        loop {
-            let current_state = self.state(height).unwrap_or_else(|| {
-                let initial = State::initial();
+            return ();
+        }
 
-                self.set_state(height, initial);
+        // Evaluate the count considering the vote of the current node
+        let count = 1 + self.evaluate_state_count(height, proposed_state);
+        let consensus = network.consensus(height, count);
+        let current_state = self.state(height);
 
-                initial
-            });
+        match consensus {
+            Consensus::Inconclusive if current_state.is_none() => {
+                let state = State::initial();
+                let block = Self::Block::default();
 
-            if current_state > proposed_state {
-                return ();
+                self.upgrade_state(height, state, network, block);
             }
 
-            if current_state.is_commit() {
-                return ();
+            Consensus::Inconclusive => (),
+
+            Consensus::Consensus if proposed_state.is_commit() => {
+                self.upgrade_state(height, proposed_state, network, message.owned_block());
+
+                let state = State::initial();
+                let height = Self::Network::increment_height(height);
+                let block = Self::Block::default();
+
+                self.upgrade_state(height, state, network, block);
             }
 
-            let count = self.evaluate_state_count(height, current_state);
-            let consensus = network.consensus(height, count);
+            Consensus::Consensus
+                if proposed_state == State::NewHeight
+                    && network.proposer(height) == Some(&self.id()) =>
+            {
+                let state = State::Propose;
+                let block = self.new_block(network);
 
-            let new_state = current_state.increment();
+                self.upgrade_state(height, state, network, block);
+            }
 
-            let id = self.id();
-            let key = self.key();
+            // Wait for the proposer to send a block
+            Consensus::Consensus if proposed_state == State::NewHeight => (),
 
-            match (consensus, new_state) {
-                (Consensus::Inconclusive, _) => break,
-
-                (Consensus::Consensus, Some(State::Propose))
-                    if network.proposer(next_height) == &id =>
-                {
-                    let block = self.new_block(network);
-                    let state = State::Propose;
-
-                    let proposal = Self::Message::new(next_height, key, id, state, block);
-
-                    self.set_peer_state(next_height, &self.id(), state);
-                    network.broadcast(&proposal);
-
-                    self.set_state(next_height, state);
+            Consensus::Consensus => {
+                if let Some(state) = proposed_state.increment() {
+                    self.upgrade_state(height, state, network, message.owned_block());
                 }
+            }
 
-                (Consensus::Consensus, None) if current_state.is_commit() => {
-                    let block = Self::Block::default();
-                    let state = State::NewHeight;
+            Consensus::Reject => {
+                let state = State::Reject;
 
-                    let reply = Self::Message::new(next_height, key, id, state, block);
-
-                    self.set_peer_state(next_height, &self.id(), state);
-                    network.broadcast(&reply);
-
-                    self.set_state(next_height, state);
-                }
-
-                // The onyl two variants that can produce `None` as next step are `commit` or
-                // `reject`, and both are already checked.
-                (Consensus::Consensus, None) => unreachable!(),
-
-                (Consensus::Consensus, Some(state)) => {
-                    let block = message.owned_block();
-                    let reply = Self::Message::new(height, key, id, state, block);
-
-                    self.set_peer_state(height, &self.id(), state);
-                    network.broadcast(&reply);
-
-                    self.set_state(height, state);
-                }
-
-                (Consensus::Reject, _) => {
-                    let block = message.owned_block();
-                    let state = State::Reject;
-
-                    let reply = Self::Message::new(height, key, id, state, block);
-
-                    self.set_peer_state(height, &self.id(), state);
-
-                    network.broadcast(&reply);
-
-                    self.set_state(height, state);
-
-                    break;
-                }
+                self.upgrade_state(height, state, network, message.owned_block());
             }
         }
     }
