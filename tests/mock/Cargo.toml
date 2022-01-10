@@ -1,0 +1,16 @@
+[package]
+name = "fuel-pbft-mock"
+version = "0.1.0"
+authors = ["Fuel Labs <contact@fuel.sh>"]
+categories = ["cryptography::cryptocurrencies"]
+edition = "2021"
+homepage = "https://fuel.network/"
+repository = "https://github.com/FuelLabs/fuel-pbft"
+
+[dependencies]
+elliptic-curve = "0.11"
+k256 = { version = "0.10", features = [ "arithmetic", "ecdsa" ] }
+fuel-pbft = { path = "../../" }
+hex = "0.4"
+rand = "0.8"
+sha2 = "0.10"
