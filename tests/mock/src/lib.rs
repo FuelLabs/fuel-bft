@@ -232,6 +232,13 @@ impl MockNetwork {
         self.validators.get(&validator).map(|(_, _, n)| n)
     }
 
+    pub fn node_mut(&mut self, round: u64) -> Option<&mut MockNode> {
+        let key = Self::key_from_round(round);
+        let validator = key.validator();
+
+        self.validators.get_mut(&validator).map(|(_, _, n)| n)
+    }
+
     pub fn validators(&self, round: u64) -> impl Iterator<Item = &MockValidatorId> {
         self.validators
             .iter()
@@ -271,7 +278,7 @@ impl Network for MockNetwork {
         self.validators(round).count()
     }
 
-    fn proposer(&self, round: u64) -> Option<&Self::ValidatorId> {
+    fn leader(&self, round: u64) -> Option<&Self::ValidatorId> {
         let validator = Self::key_from_round(round).validator();
 
         self.validators(round).find(|p| p == &&validator)

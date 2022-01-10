@@ -112,7 +112,7 @@ pub trait Node {
         let block = message.block();
         let round = message.round();
         let validator = message.validator();
-        let proposed_state = message.state();
+        let mut proposed_state = message.state();
 
         // Ignore messages produced by self
         if validator == &self.id() {
@@ -140,8 +140,11 @@ pub trait Node {
 
         self.upgrade_validator_state(round, validator, proposed_state);
 
-        if proposed_state.is_propose() && Some(validator) == network.proposer(round) {
+        if proposed_state.is_propose() && Some(validator) == network.leader(round) {
             self.upgrade_state(round, State::Propose, network, message.owned_block());
+
+            // Block proposers are automatically committed to their own blocks
+            self.upgrade_validator_state(round, validator, State::Commit);
 
             return ();
         }
@@ -150,6 +153,20 @@ pub trait Node {
         let count = 1 + self.evaluate_state_count(round, proposed_state);
         let consensus = network.consensus(round, count);
         let current_state = self.state(round);
+
+        // Upgrade to latest consensus, if available
+        if consensus.is_consensus() {
+            while let Some(next_state) = proposed_state.increment() {
+                let count = 1 + self.evaluate_state_count(round, next_state);
+                let next_consensus = network.consensus(round, count);
+
+                if next_consensus.is_consensus() {
+                    proposed_state = next_state;
+                } else {
+                    break;
+                }
+            }
+        }
 
         match consensus {
             Consensus::Inconclusive if current_state.is_none() => {
@@ -161,28 +178,24 @@ pub trait Node {
 
             Consensus::Inconclusive => (),
 
-            Consensus::Consensus if proposed_state.is_commit() => {
-                self.upgrade_state(round, proposed_state, network, message.owned_block());
+            Consensus::Consensus if proposed_state.is_precommit() || proposed_state.is_commit() => {
+                let next_round = Self::Network::increment_round(round);
 
-                let state = State::initial();
-                let round = Self::Network::increment_round(round);
-                let block = Self::Block::default();
+                self.upgrade_state(round, State::Commit, network, message.owned_block());
 
-                self.upgrade_state(round, state, network, block);
+                if self.state(next_round).is_some() {
+                    // Do nothing, state is already tracked
+                } else if network.leader(next_round) == Some(&self.id()) {
+                    let block = self.new_block(network);
+
+                    // Automatically commit to own proposed block
+                    self.upgrade_state(next_round, State::Commit, network, block);
+                } else {
+                    let block = Self::Block::default();
+
+                    self.upgrade_state(next_round, State::NewRound, network, block);
+                }
             }
-
-            Consensus::Consensus
-                if proposed_state == State::NewRound
-                    && network.proposer(round) == Some(&self.id()) =>
-            {
-                let state = State::Propose;
-                let block = self.new_block(network);
-
-                self.upgrade_state(round, state, network, block);
-            }
-
-            // Wait for the proposer to send a block
-            Consensus::Consensus if proposed_state == State::NewRound => (),
 
             Consensus::Consensus => {
                 if let Some(state) = proposed_state.increment() {

@@ -15,9 +15,18 @@ fn consensus() {
         assert!(network.node(node).expect("Node added").state(0).is_none());
     }
 
-    // Pick a node and start the engine
+    // Propose a block with the current round leader
     let key = MockNetwork::key_from_round(nodes - 1);
-    let message = MockMessage::new(0, key, State::NewRound, Default::default());
+    let node = network.node(0).expect("Expected leader for first round");
+    let id = node.id();
+    let block = node.new_block(&network);
+
+    let message = MockMessage::new(0, key, State::Propose, block);
+
+    network
+        .node_mut(0)
+        .expect("Expected leader for first round")
+        .upgrade_validator_state(0, &id, State::Commit);
 
     network.broadcast(&message);
 

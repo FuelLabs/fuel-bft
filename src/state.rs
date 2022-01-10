@@ -60,6 +60,10 @@ impl State {
         Self::NewRound
     }
 
+    pub const fn is_precommit(&self) -> bool {
+        matches!(self, Self::Precommit)
+    }
+
     pub const fn is_commit(&self) -> bool {
         matches!(self, Self::Commit)
     }

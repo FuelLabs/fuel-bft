@@ -17,6 +17,10 @@ impl Consensus {
         }
     }
 
+    pub const fn is_consensus(&self) -> bool {
+        matches!(self, Self::Consensus)
+    }
+
     pub const fn is_inconclusive(&self) -> bool {
         matches!(self, Self::Inconclusive)
     }
@@ -33,7 +37,7 @@ pub trait Network {
     fn increment_round(round: Self::Round) -> Self::Round;
     fn is_validator(&self, round: Self::Round, validator: &Self::ValidatorId) -> bool;
     fn validators(&self, round: Self::Round) -> usize;
-    fn proposer(&self, round: Self::Round) -> Option<&Self::ValidatorId>;
+    fn leader(&self, round: Self::Round) -> Option<&Self::ValidatorId>;
 
     /// Generate the block payload to allow the creation of a new block.
     fn block_payload(&self) -> Self::Payload;
