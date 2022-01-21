@@ -7,64 +7,91 @@ fn consensus() {
 
     let mut network = MockNetwork::default();
 
+    let start = HeightRound::start(0);
+
     for node in 0..nodes {
-        network.add_node(node, 0, nodes);
+        let key = MockKey::from(node);
+        let node = MockNode::new(key, start, nodes);
+
+        network.add_validator(node);
     }
 
     for node in 0..nodes {
-        assert!(network.node(node).expect("Node added").state(0).is_none());
+        let round = HeightRound::start(node);
+        let state = network.validator(node).expect("Node added").state(&round);
+
+        assert!(state.is_none());
     }
 
     // Propose a block with the current round leader
-    let key = MockNetwork::key_from_round(nodes - 1);
-    let node = network.node(0).expect("Expected leader for first round");
-    let id = node.id();
+    let seed = nodes - 1;
+    let key = MockKey::from(seed);
+    let id = key.validator();
+
+    let node = network
+        .validator(seed)
+        .expect("Expected leader for first round");
+
     let block = node.new_block(&network);
 
-    let message = MockMessage::new(0, key, State::Propose, block);
+    let round = HeightRound::start(0);
+    let message = MockMessage::new(round, key, State::Propose, block);
 
     network
-        .node_mut(0)
+        .validator_mut(seed)
         .expect("Expected leader for first round")
-        .upgrade_validator_state(0, &id, State::Commit);
+        .upgrade_validator_state(&round, &id, State::Commit);
 
     network.broadcast(&message);
 
     for round in 0..nodes {
         for node in 0..nodes {
-            assert_eq!(
-                Some(State::Commit),
-                network.node(node).expect("Node added").state(round)
-            );
+            let round = HeightRound::start(round);
+
+            let state = network.validator(node).expect("Node added").state(&round);
+
+            assert_eq!(Some(State::Commit), state);
         }
     }
 
+    let round = HeightRound::start(nodes);
+
     for node in 0..nodes {
-        assert_eq!(
-            Some(State::NewRound),
-            network.node(node).expect("Node added").state(nodes)
-        );
+        let state = network.validator(node).expect("Node added").state(&round);
+
+        assert_eq!(Some(State::NewRound), state);
     }
 }
 
 #[test]
 fn consensus_fails() {
+    let nodes = 3;
+
     let mut network = MockNetwork::default();
 
-    // Not enough nodes for pBFT
-    network.add_node(1, 1, 100);
-    network.add_node(2, 1, 100);
-    network.add_node(3, 1, 100);
+    let start = HeightRound::start(0);
 
-    assert!(network.node(1).expect("Node added").state(1).is_none());
+    for node in 0..nodes {
+        let key = MockKey::from(node);
+        let node = MockNode::new(key, start, nodes);
 
-    let key = MockNetwork::key_from_round(3);
-    let message = MockMessage::new(1, key, State::NewRound, Default::default());
+        network.add_validator(node);
+    }
+
+    let round = HeightRound::start(1);
+
+    assert!(network
+        .validator(1)
+        .expect("Node added")
+        .state(&round)
+        .is_none());
+
+    let key = MockKey::from(2);
+    let message = MockMessage::new(round, key, State::NewRound, Default::default());
 
     network.broadcast(&message);
 
-    assert_eq!(
-        Some(State::Reject),
-        network.node(1).expect("Node added").state(1)
-    );
+    let state = network.validator(1).expect("Node added").state(&round);
+
+    assert_eq!(Some(State::Reject), state);
 }

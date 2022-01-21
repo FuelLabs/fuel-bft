@@ -1,16 +1,15 @@
-use crate::{Block, Key, Round, State, ValidatorId};
+use crate::{Block, HeightRound, Key, State, ValidatorId};
 
 pub trait Message {
     type Block: Block;
     type Key: Key;
-    type Round: Round;
     type ValidatorId: ValidatorId;
 
-    fn new(round: Self::Round, key: Self::Key, state: State, block: Self::Block) -> Self;
+    fn new(round: HeightRound, key: Self::Key, state: State, block: Self::Block) -> Self;
 
     fn block(&self) -> &Self::Block;
     fn owned_block(&self) -> Self::Block;
-    fn round(&self) -> Self::Round;
+    fn round(&self) -> &HeightRound;
     fn state(&self) -> State;
 
     /// Author of the message
