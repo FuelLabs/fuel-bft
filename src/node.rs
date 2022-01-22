@@ -1,22 +1,15 @@
-use crate::{Block, Consensus, Key, Message, Network, Round, State, ValidatorId};
+use crate::{Block, Consensus, HeightRound, Key, Message, Network, State, ValidatorId};
 
 pub trait Node {
     type Block: Block<Payload = Self::Payload, ValidatorId = Self::ValidatorId>;
     type Key: Key;
-    type Message: Message<
-        Block = Self::Block,
-        Key = Self::Key,
-        ValidatorId = Self::ValidatorId,
-        Round = Self::Round,
-    >;
+    type Message: Message<Block = Self::Block, Key = Self::Key, ValidatorId = Self::ValidatorId>;
     type Network: Network<
         Message = Self::Message,
         Payload = Self::Payload,
         ValidatorId = Self::ValidatorId,
-        Round = Self::Round,
     >;
     type Payload;
-    type Round: Round;
     type ValidatorId: ValidatorId;
 
     /// Network ID of the node
@@ -26,25 +19,25 @@ pub trait Node {
     fn key(&self) -> Self::Key;
 
     /// Fetch the current state of a validator for a given round
-    fn validator_state(&self, round: Self::Round, validator: &Self::ValidatorId) -> Option<State>;
+    fn validator_state(&self, round: &HeightRound, validator: &Self::ValidatorId) -> Option<State>;
 
     /// Set the network state of a validator for a given round
     fn set_validator_state(
         &mut self,
-        round: Self::Round,
+        round: &HeightRound,
         validator: &Self::ValidatorId,
         state: State,
     );
 
     /// State count for a given round
-    fn state_count(&self, round: Self::Round, state: State) -> usize;
+    fn state_count(&self, round: &HeightRound, state: State) -> usize;
 
     fn validate_block(&self, block: &Self::Block) -> bool;
 
     /// Upgrade a validator state, returning true if there was a change
     fn upgrade_validator_state(
         &mut self,
-        round: Self::Round,
+        round: &HeightRound,
         validator: &Self::ValidatorId,
         state: State,
     ) -> bool {
@@ -70,12 +63,12 @@ pub trait Node {
     /// Upgrade the node state, returning true if there was a change
     fn upgrade_state(
         &mut self,
-        round: Self::Round,
+        round: HeightRound,
         state: State,
         network: &mut Self::Network,
         block: Self::Block,
     ) {
-        if self.upgrade_validator_state(round, &self.id(), state) {
+        if self.upgrade_validator_state(&round, &self.id(), state) {
             let key = self.key();
 
             let reply = Self::Message::new(round, key, state, block);
@@ -85,7 +78,7 @@ pub trait Node {
     }
 
     /// Current state of the node for a given round
-    fn state(&self, round: Self::Round) -> Option<State> {
+    fn state(&self, round: &HeightRound) -> Option<State> {
         let validator = self.id();
 
         self.validator_state(round, &validator)
@@ -101,7 +94,7 @@ pub trait Node {
 
     /// Evaluate the state count for a given round, including the validators that are in subsequent
     /// states.
-    fn evaluate_state_count(&self, round: Self::Round, state: State) -> usize {
+    fn evaluate_state_count(&self, round: &HeightRound, state: State) -> usize {
         let current = self.state_count(round, state);
         let subsequent: usize = state.map(|s| self.state_count(round, s)).sum::<usize>();
 
@@ -140,8 +133,13 @@ pub trait Node {
 
         self.upgrade_validator_state(round, validator, proposed_state);
 
-        if proposed_state.is_propose() && Some(validator) == network.leader(round) {
-            self.upgrade_state(round, State::Propose, network, message.owned_block());
+        if proposed_state.is_propose()
+            && network
+                .leader(round)
+                .filter(|v| v.as_ref() == validator)
+                .is_some()
+        {
+            self.upgrade_state(*round, State::Propose, network, message.owned_block());
 
             // Block proposers are automatically committed to their own blocks
             self.upgrade_validator_state(round, validator, State::Commit);
@@ -173,19 +171,23 @@ pub trait Node {
                 let state = State::initial();
                 let block = Self::Block::default();
 
-                self.upgrade_state(round, state, network, block);
+                self.upgrade_state(*round, state, network, block);
             }
 
             Consensus::Inconclusive => (),
 
             Consensus::Consensus if proposed_state.is_precommit() || proposed_state.is_commit() => {
-                let next_round = Self::Network::increment_round(round);
+                let next_round = Self::Network::increment_height(*round);
 
-                self.upgrade_state(round, State::Commit, network, message.owned_block());
+                self.upgrade_state(*round, State::Commit, network, message.owned_block());
 
-                if self.state(next_round).is_some() {
+                if self.state(&next_round).is_some() {
                     // Do nothing, state is already tracked
-                } else if network.leader(next_round) == Some(&self.id()) {
+                } else if network
+                    .leader(&next_round)
+                    .filter(|l| l.as_ref() == &self.id())
+                    .is_some()
+                {
                     let block = self.new_block(network);
 
                     // Automatically commit to own proposed block
@@ -199,14 +201,14 @@ pub trait Node {
 
             Consensus::Consensus => {
                 if let Some(state) = proposed_state.increment() {
-                    self.upgrade_state(round, state, network, message.owned_block());
+                    self.upgrade_state(*round, state, network, message.owned_block());
                 }
             }
 
             Consensus::Reject => {
                 let state = State::Reject;
 
-                self.upgrade_state(round, state, network, message.owned_block());
+                self.upgrade_state(*round, state, network, message.owned_block());
             }
         }
     }

@@ -8,9 +8,11 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use sha2::{Digest, Sha256};
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::vec::IntoIter;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct MockKey(SigningKey);
@@ -50,6 +52,12 @@ impl MockKey {
     }
 }
 
+impl From<u64> for MockKey {
+    fn from(seed: u64) -> Self {
+        Self::new(seed.to_be_bytes())
+    }
+}
+
 impl Key for MockKey {
     type ValidatorId = MockValidatorId;
 
@@ -69,7 +77,7 @@ impl fmt::Debug for MockSignature {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MockValidatorId(VerifyingKey);
 
 impl ValidatorId for MockValidatorId {}
@@ -142,17 +150,18 @@ impl Block for MockBlock {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MockMessage {
     block: MockBlock,
-    round: u64,
+    round: HeightRound,
     signature: MockSignature,
     state: State,
     validator: MockValidatorId,
 }
 
 impl MockMessage {
-    fn digest(round: u64, state: State, block: &MockBlock) -> impl Digest {
+    fn digest(round: &HeightRound, state: State, block: &MockBlock) -> impl Digest {
         block
             .digest()
-            .chain_update(round.to_be_bytes())
+            .chain_update(round.height().to_be_bytes())
+            .chain_update(round.round().to_be_bytes())
             .chain_update(&[state as u8])
     }
 }
@@ -160,11 +169,10 @@ impl MockMessage {
 impl Message for MockMessage {
     type Block = MockBlock;
     type Key = MockKey;
-    type Round = u64;
     type ValidatorId = MockValidatorId;
 
-    fn new(round: u64, key: Self::Key, state: State, block: Self::Block) -> Self {
-        let digest = Self::digest(round, state, &block);
+    fn new(round: HeightRound, key: Self::Key, state: State, block: Self::Block) -> Self {
+        let digest = Self::digest(&round, state, &block);
         let validator = key.validator();
         let signature = key.sign(digest);
 
@@ -185,8 +193,8 @@ impl Message for MockMessage {
         self.block.clone()
     }
 
-    fn round(&self) -> u64 {
-        self.round
+    fn round(&self) -> &HeightRound {
+        &self.round
     }
 
     fn state(&self) -> State {
@@ -198,53 +206,103 @@ impl Message for MockMessage {
     }
 
     fn is_valid(&self) -> bool {
-        let digest = Self::digest(self.round, self.state, &self.block);
+        let digest = Self::digest(&self.round, self.state, &self.block);
 
         self.validator.verify(&self.signature, digest)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MockRoundId {
+    round: HeightRound,
+    id: MockValidatorId,
+}
+
+impl MockRoundId {
+    pub const fn new(round: HeightRound, id: MockValidatorId) -> Self {
+        Self { round, id }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MockNode {
+    key: MockKey,
+    id: MockValidatorId,
+    start: HeightRound,
+    validity: HeightRound,
+    validator_state: HashMap<MockRoundId, State>,
+}
+
+impl MockNode {
+    pub fn new(key: MockKey, start: HeightRound, validity: u64) -> Self {
+        let id = key.validator();
+
+        let validity = (0..validity).fold(start, |r, _| MockNetwork::increment_height(r));
+        let validator_state = Default::default();
+
+        Self {
+            key,
+            id,
+            start,
+            validity,
+            validator_state,
+        }
+    }
+
+    pub const fn id(&self) -> &MockValidatorId {
+        &self.id
+    }
+
+    pub const fn start(&self) -> &HeightRound {
+        &self.start
+    }
+
+    pub const fn validity(&self) -> &HeightRound {
+        &self.validity
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct MockNetwork {
     /// Set of validators mapping to a round range
-    validators: HashMap<MockValidatorId, (u64, u64, MockNode)>,
+    validators: HashMap<MockValidatorId, MockNode>,
 }
 
 impl MockNetwork {
-    pub fn key_from_round(round: u64) -> MockKey {
-        MockKey::new(format!("round {}", round))
+    pub fn add_validator(&mut self, node: MockNode) {
+        let id = *node.id();
+
+        self.validators.insert(id, node);
     }
 
-    pub fn add_node(&mut self, round: u64, from: u64, validity: u64) {
-        let to = from + validity;
+    pub fn validator(&self, seed: u64) -> Option<&MockNode> {
+        let key = MockKey::from(seed);
+        let id = key.validator();
 
-        let key = Self::key_from_round(round);
-        let validator = key.validator();
-        let node = MockNode::new(key);
-
-        self.validators.insert(validator, (from, to, node));
+        self.validators.get(&id)
     }
 
-    pub fn node(&self, round: u64) -> Option<&MockNode> {
-        let key = Self::key_from_round(round);
-        let validator = key.validator();
+    pub fn validator_mut(&mut self, seed: u64) -> Option<&mut MockNode> {
+        let key = MockKey::from(seed);
+        let id = key.validator();
 
-        self.validators.get(&validator).map(|(_, _, n)| n)
+        self.validators.get_mut(&id)
     }
 
-    pub fn node_mut(&mut self, round: u64) -> Option<&mut MockNode> {
-        let key = Self::key_from_round(round);
-        let validator = key.validator();
+    pub fn validators(&self, round: &HeightRound) -> impl Iterator<Item = &MockValidatorId> {
+        let round = *round;
 
-        self.validators.get_mut(&validator).map(|(_, _, n)| n)
+        self.validators.iter().filter_map(move |(id, node)| {
+            (node.start() <= &round && &round < node.validity()).then(|| id)
+        })
     }
 
-    pub fn validators(&self, round: u64) -> impl Iterator<Item = &MockValidatorId> {
+    pub fn validators_mut(&mut self, round: &HeightRound) -> impl Iterator<Item = &mut MockNode> {
+        let round = *round;
+
         self.validators
-            .iter()
-            .filter_map(move |(validator, (from, to, _))| {
-                (*from <= round && round < *to).then(|| validator)
-            })
+            .values_mut()
+            .filter(move |node| node.start() <= &round && &round < node.validity())
     }
 }
 
@@ -252,55 +310,24 @@ impl Network for MockNetwork {
     type Block = MockBlock;
     type Message = MockMessage;
     type Payload = BlockPayload;
-    type Round = u64;
     type ValidatorId = MockValidatorId;
+    type ValidatorIdRef = Cow<'static, MockValidatorId>;
+    type ValidatorIdSorted = IntoIter<Cow<'static, MockValidatorId>>;
 
     fn broadcast(&mut self, message: &Self::Message) {
+        let network = self as *mut MockNetwork;
         let round = message.round();
 
-        let network = self as *mut MockNetwork;
-
-        self.validators
-            .iter_mut()
-            .filter_map(|(_, (from, to, node))| (*from <= round && round < *to).then(|| node))
+        self.validators_mut(round)
             .for_each(|node| node.receive_message(unsafe { network.as_mut().unwrap() }, message));
     }
 
-    fn increment_round(round: u64) -> u64 {
-        round + 1
-    }
-
-    fn is_validator(&self, round: u64, validator: &Self::ValidatorId) -> bool {
-        self.validators(round).any(|p| p == validator)
-    }
-
-    fn validators(&self, round: u64) -> usize {
-        self.validators(round).count()
-    }
-
-    fn leader(&self, round: u64) -> Option<&Self::ValidatorId> {
-        let validator = Self::key_from_round(round).validator();
-
-        self.validators(round).find(|p| p == &&validator)
+    fn validators_sorted(&self, round: &HeightRound) -> Self::ValidatorIdSorted {
+        itertools::sorted(self.validators(round).copied().map(Cow::Owned))
     }
 
     fn block_payload(&self) -> Self::Payload {
         BlockPayload { is_valid: true }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MockNode {
-    key: MockKey,
-    validator_state: HashMap<(u64, MockValidatorId), State>,
-}
-
-impl MockNode {
-    pub fn new(key: MockKey) -> Self {
-        Self {
-            key,
-            validator_state: Default::default(),
-        }
     }
 }
 
@@ -310,7 +337,6 @@ impl Node for MockNode {
     type Message = MockMessage;
     type Network = MockNetwork;
     type Payload = BlockPayload;
-    type Round = u64;
     type ValidatorId = MockValidatorId;
 
     fn id(&self) -> Self::ValidatorId {
@@ -321,18 +347,27 @@ impl Node for MockNode {
         self.key.clone()
     }
 
-    fn validator_state(&self, round: u64, validator: &Self::ValidatorId) -> Option<State> {
-        self.validator_state.get(&(round, *validator)).copied()
+    fn validator_state(&self, round: &HeightRound, validator: &Self::ValidatorId) -> Option<State> {
+        let id = MockRoundId::new(*round, *validator);
+
+        self.validator_state.get(&id).copied()
     }
 
-    fn set_validator_state(&mut self, round: u64, validator: &Self::ValidatorId, state: State) {
-        self.validator_state.insert((round, *validator), state);
+    fn set_validator_state(
+        &mut self,
+        round: &HeightRound,
+        validator: &Self::ValidatorId,
+        state: State,
+    ) {
+        let id = MockRoundId::new(*round, *validator);
+
+        self.validator_state.insert(id, state);
     }
 
-    fn state_count(&self, round: u64, state: State) -> usize {
+    fn state_count(&self, round: &HeightRound, state: State) -> usize {
         self.validator_state
             .iter()
-            .filter(|((h, _), s)| h == &round && s == &&state)
+            .filter(|(r, s)| &r.round == round && s == &&state)
             .count()
     }
 

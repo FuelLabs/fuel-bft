@@ -14,6 +14,6 @@ pub use key::Key;
 pub use message::Message;
 pub use network::{Consensus, Network};
 pub use node::Node;
-pub use round::Round;
+pub use round::HeightRound;
 pub use state::State;
 pub use validator::ValidatorId;
