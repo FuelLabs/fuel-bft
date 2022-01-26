@@ -1,4 +1,4 @@
-use fuel_pbft::*;
+use fuel_bft::*;
 
 use elliptic_curve::group::prime::PrimeCurveAffine;
 use k256::ecdsa::signature::{Signer, Verifier};

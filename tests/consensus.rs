@@ -1,5 +1,5 @@
-use fuel_pbft::*;
-use fuel_pbft_mock::*;
+use fuel_bft::*;
+use fuel_bft_mock::*;
 
 #[test]
 fn consensus() {
