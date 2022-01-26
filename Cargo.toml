@@ -8,7 +8,7 @@ homepage = "https://fuel.network/"
 keywords = ["blockchain", "cryptocurrencies", "fuel"]
 license = "Apache-2.0"
 repository = "https://github.com/FuelLabs/fuel-bft"
-description = "A pBFT scheme for Fuel."
+description = "A Rust implementation of the Tendermint consensus protocol."
 
 [dependencies]
 
