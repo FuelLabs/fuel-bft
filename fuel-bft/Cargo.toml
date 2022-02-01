@@ -1,0 +1,16 @@
+[package]
+name = "fuel-bft"
+version = "0.1.0"
+authors = ["Fuel Labs <contact@fuel.sh>"]
+categories = ["cryptography::cryptocurrencies"]
+edition = "2021"
+homepage = "https://fuel.network/"
+keywords = ["blockchain", "cryptocurrencies", "fuel"]
+license = "Apache-2.0"
+repository = "https://github.com/FuelLabs/fuel-bft"
+description = "A Rust implementation of the Tendermint consensus protocol."
+
+[dependencies]
+
+[dev-dependencies]
+fuel-bft-mock = { path = "tests/mock" }

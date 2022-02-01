@@ -48,11 +48,11 @@ jobs:
         command: fmt
         args: --all --verbose -- --check
 
-    - name: Build no-std
+    - name: Build no-std fuel-bft
       uses: actions-rs/cargo@v1
       with:
         command: build
-        args: --verbose --target thumbv6m-none-eabi --no-default-features
+        args: --verbose --target thumbv6m-none-eabi --no-default-features --package fuel-bft
 
     - name: Run tests
       uses: actions-rs/cargo@v1
