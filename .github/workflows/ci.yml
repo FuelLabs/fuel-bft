@@ -48,17 +48,51 @@ jobs:
         command: fmt
         args: --all --verbose -- --check
 
-    - name: Build no-std fuel-bft
+    - name: Build no-std
       uses: actions-rs/cargo@v1
       with:
         command: build
-        args: --verbose --target thumbv6m-none-eabi --no-default-features --package fuel-bft
+        args: --verbose --target thumbv6m-none-eabi --no-default-features
 
     - name: Run tests
       uses: actions-rs/cargo@v1
+      env:
+        RUST_LOG: debug
       with:
         command: test
         args: --verbose
+
+    - name: Run tests memory
+      uses: actions-rs/cargo@v1
+      env:
+        RUST_LOG: debug
+      with:
+        command: test
+        args: --verbose --no-default-features --features memory
+
+    - name: Run tests no-default-features
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose --no-default-features
+
+    - name: Run tests trace no-features
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose --no-default-features --features trace
+
+    - name: Run tests trace
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose --features trace
+
+    - name: Run tests tokio-reactor
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose --no-default-features --features tokio-reactor
 
   publish:
     # Only do this job if publishing a release
