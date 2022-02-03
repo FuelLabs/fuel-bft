@@ -1,25 +1,50 @@
-use crate::{Block, HeightRound, Key, State, ValidatorId};
+use crate::{Block, HeightRound, RoundValidator, State};
 
-pub trait Message {
+use fuel_crypto::{Keystore, Message as CryptoMessage, PublicKey, Signature, Signer};
+use fuel_types::Bytes32;
+
+pub trait Message: Sized {
     type Block: Block;
-    type Key: Key;
-    type ValidatorId: ValidatorId;
+    type Error: From<<Self::Signer as Signer>::Error>;
+    type Signer: Signer;
 
-    fn new(round: HeightRound, key: Self::Key, state: State, block: Self::Block) -> Self;
-
+    fn author(&self) -> &RoundValidator;
     fn block(&self) -> &Self::Block;
-    fn owned_block(&self) -> Self::Block;
-    fn round(&self) -> &HeightRound;
+    fn hash(&self) -> Bytes32;
+    fn set_signature(&mut self, author: PublicKey, signature: Signature);
+    fn signature(&self) -> &Signature;
     fn state(&self) -> State;
+    fn unsigned(round: HeightRound, state: State, block: Self::Block) -> Self;
 
-    /// Author of the message
-    fn validator(&self) -> &Self::ValidatorId;
+    fn author_key(&self) -> &PublicKey {
+        self.author().validator()
+    }
 
-    /// Validate the signature of the message.
-    ///
-    /// The suggested structure is to have a field for the signature, a field for the validator id,
-    /// function to hash the message - excluding the signature - into a digest, and check the
-    /// signature using a protocol that maps [`Self::Key`] into [`Self::ValidatorId`] (e.g. ECC) and
-    /// verify the signature against the validator id and the digest.
-    fn is_valid(&self) -> bool;
+    fn round(&self) -> &HeightRound {
+        self.author().round()
+    }
+
+    fn to_signature_message(&self) -> CryptoMessage {
+        let hash = self.hash();
+
+        // Safety: cryptographically secure hash used
+        unsafe { CryptoMessage::from_bytes_unchecked(*hash) }
+    }
+
+    fn signed(
+        signer: &Self::Signer,
+        key: &<<Self::Signer as Signer>::Keystore as Keystore>::KeyId,
+        round: HeightRound,
+        state: State,
+        block: Self::Block,
+    ) -> Result<Self, Self::Error> {
+        let mut message = Self::unsigned(round, state, block);
+
+        let signature = signer.sign(key, &message.to_signature_message())?;
+        let public = signer.id_public(key)?;
+
+        message.set_signature(public.into_owned(), signature);
+
+        Ok(message)
+    }
 }

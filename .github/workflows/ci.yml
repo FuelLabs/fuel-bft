@@ -60,6 +60,18 @@ jobs:
         command: test
         args: --verbose
 
+    - name: Run tests no-default-features
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose --no-default-features
+
+    - name: Run tests trace
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --verbose --features trace
+
   publish:
     # Only do this job if publishing a release
     needs: build

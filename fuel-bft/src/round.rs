@@ -1,3 +1,5 @@
+use fuel_crypto::PublicKey;
+
 use core::cmp::Ordering;
 use core::fmt;
 
@@ -72,5 +74,37 @@ impl HeightRound {
 impl From<u64> for HeightRound {
     fn from(height: u64) -> Self {
         Self::start(height)
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RoundValidator {
+    round: HeightRound,
+    validator: PublicKey,
+}
+
+impl RoundValidator {
+    pub const fn new(round: HeightRound, validator: PublicKey) -> Self {
+        Self { round, validator }
+    }
+
+    pub const fn round(&self) -> &HeightRound {
+        &self.round
+    }
+
+    pub const fn validator(&self) -> &PublicKey {
+        &self.validator
+    }
+
+    pub fn set_validator(&mut self, validator: PublicKey) {
+        self.validator = validator;
+    }
+}
+
+impl From<HeightRound> for RoundValidator {
+    fn from(round: HeightRound) -> Self {
+        let validator = Default::default();
+
+        Self::new(round, validator)
     }
 }

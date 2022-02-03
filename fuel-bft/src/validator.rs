@@ -1,1 +1,0 @@
-pub trait ValidatorId: Eq {}

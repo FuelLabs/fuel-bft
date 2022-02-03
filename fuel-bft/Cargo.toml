@@ -11,6 +11,11 @@ repository = "https://github.com/FuelLabs/fuel-bft"
 description = "A Rust implementation of the Tendermint consensus protocol."
 
 [dependencies]
+fuel-crypto = { version = "0.4", default-features = false }
+fuel-types = { version = "0.3", default-features = false }
+tracing = { version = "0.1", default-features = false, optional = true }
 
-[dev-dependencies]
-fuel-bft-mock = { path = "tests/mock" }
+[features]
+default = [ "fuel-crypto/default", "fuel-types/default", "std" ]
+std = [ "fuel-crypto/std", "fuel-types/std" ]
+trace = [ "tracing" ]

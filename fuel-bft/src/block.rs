@@ -1,11 +1,10 @@
-use crate::ValidatorId;
+use fuel_crypto::PublicKey;
 
 /// Block representation.
 ///
 /// The default implementation will be used to start consensus process for non-leaders.
-pub trait Block: Default {
+pub trait Block: Default + Clone {
     type Payload;
-    type ValidatorId: ValidatorId;
 
-    fn new(owner: Self::ValidatorId, payload: Self::Payload) -> Self;
+    fn new(owner: PublicKey, payload: Self::Payload) -> Self;
 }
