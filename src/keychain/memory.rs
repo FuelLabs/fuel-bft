@@ -22,9 +22,7 @@ impl MemoryKeychain {
         H: RangeBounds<Height>,
         P: AsRef<[u8]>,
     {
-        let seed = Hasher::hash(password);
-        let rng = &mut StdRng::from_seed(*seed);
-        let secret = SecretKey::random(rng);
+        let secret = Self::secret(password);
 
         // TODO implement range split?
         self.keys.insert(
@@ -34,6 +32,17 @@ impl MemoryKeychain {
             },
             secret,
         );
+    }
+
+    /// Generate a new secret
+    pub fn secret<P>(password: P) -> SecretKey
+    where
+        P: AsRef<[u8]>,
+    {
+        let seed = Hasher::hash(password);
+        let rng = &mut StdRng::from_seed(*seed);
+
+        SecretKey::random(rng)
     }
 }
 

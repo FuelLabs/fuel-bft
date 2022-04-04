@@ -16,6 +16,15 @@ pub type Round = u64;
 pub(crate) use consensus::Consensus;
 pub(crate) use metadata::Metadata;
 
+#[doc(no_inline)]
+pub use fuel_crypto;
+
+#[doc(no_inline)]
+pub use fuel_types;
+
+#[doc(no_inline)]
+pub use time;
+
 mod consensus;
 mod error;
 mod keychain;

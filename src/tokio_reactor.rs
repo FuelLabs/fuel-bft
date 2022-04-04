@@ -206,14 +206,14 @@ impl Moderator for TokioModerator {
         Ok(self.inbound.blocking_recv())
     }
 
-    async fn outbound(&self, message: Message, timeout: Duration) -> Result<(), Self::Error> {
+    async fn outbound(&mut self, message: Message, timeout: Duration) -> Result<(), Self::Error> {
         self.outbound
             .send_timeout(message, timeout)
             .await
             .map_err(|_| Error::ResourceNotAvailable)
     }
 
-    async fn rebound(&self, message: Message, timeout: Duration) -> Result<(), Self::Error> {
+    async fn rebound(&mut self, message: Message, timeout: Duration) -> Result<(), Self::Error> {
         self.rebound
             .send_timeout(message, timeout)
             .await

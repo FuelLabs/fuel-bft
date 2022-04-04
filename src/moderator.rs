@@ -9,7 +9,7 @@ use core::time::Duration;
 
 /// Reactor I/O handler
 #[async_trait]
-pub trait Moderator: Sync {
+pub trait Moderator: Send + Sync {
     /// Concrete error of the trait.
     type Error: fmt::Display;
 
@@ -30,13 +30,13 @@ pub trait Moderator: Sync {
     fn inbound_blocking(&mut self) -> Result<Option<Message>, Self::Error>;
 
     /// Messages dispatched from the reactor
-    async fn outbound(&self, message: Message, timeout: Duration) -> Result<(), Self::Error>;
+    async fn outbound(&mut self, message: Message, timeout: Duration) -> Result<(), Self::Error>;
 
     /// Messages consumed by the reactor that need to be rescheduled
-    async fn rebound(&self, message: Message, timeout: Duration) -> Result<(), Self::Error>;
+    async fn rebound(&mut self, message: Message, timeout: Duration) -> Result<(), Self::Error>;
 
     /// Send a message from the reactor.
-    async fn send(&self, message: Message, timeout: Duration) {
+    async fn send(&mut self, message: Message, timeout: Duration) {
         #[cfg(feature = "trace")]
         tracing::debug!("sending message {:?}", message);
 
@@ -47,7 +47,7 @@ pub trait Moderator: Sync {
     }
 
     /// Requeue a message that cannot be consumed by the reactor.
-    async fn requeue(&self, message: Message, timeout: Duration) {
+    async fn requeue(&mut self, message: Message, timeout: Duration) {
         if let Err(_e) = self.rebound(message, timeout).await {
             #[cfg(feature = "trace")]
             tracing::error!("error rebounding message: {}", _e);

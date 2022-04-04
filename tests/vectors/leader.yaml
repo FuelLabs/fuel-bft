@@ -1,0 +1,75 @@
+# Initialize the node with the default password
+- initializeDefault
+
+# Setup initial validators
+- addDefaultValidators:
+    height: 0
+    validity: 4
+
+# Sanity check
+- assertHeight: 0
+- assertRound: 0
+
+- assertValidatorIsLeader:
+    validator:
+      name: defaultNode
+
+# The default validators are organized in a way that they are guaranteed to be ordered
+# Hence, the next leader is `A`
+- skipRounds: 1
+- assertRound: 1
+- assertValidatorIsLeader:
+    validator:
+      name: defaultValidatorA
+
+# The next round validator should be `B`
+- skipRounds: 1
+- assertRound: 2
+- assertValidatorIsLeader:
+    validator:
+      name: defaultValidatorB
+
+# And finally, `C`
+- skipRounds: 1
+- assertRound: 3
+- assertValidatorIsLeader:
+    validator:
+      name: defaultValidatorC
+
+# The node wasn't initialized, so the next validator is `A`
+- skipRounds: 1
+- assertRound: 4
+- assertValidatorIsLeader:
+    validator:
+      name: defaultNode
+
+# Check some arbitrarily distant round
+- skipRounds: 118
+- assertRound: 122
+- assertValidatorIsLeader:
+    validator:
+      name: defaultValidatorB
+
+# Commit to the next height
+- assertHeight: 0
+- commit
+- assertHeight: 1
+- assertRound: 0
+- assertValidatorIsLeader:
+    validator:
+      name: defaultValidatorC
+
+# Redundant check on next leader
+- skipRounds: 1
+- assertHeight: 1
+- assertRound: 1
+- assertValidatorIsLeader:
+    validator:
+      name: defaultNode
+
+- skipRounds: 1
+- assertHeight: 1
+- assertRound: 2
+- assertValidatorIsLeader:
+    validator:
+      name: defaultValidatorA

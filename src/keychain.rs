@@ -1,7 +1,7 @@
 use crate::Height;
 
 use fuel_crypto::borrown::Borrown;
-use fuel_crypto::{Hasher, Keystore, PublicKey, Signature, Signer};
+use fuel_crypto::{Hasher, Keystore, PublicKey, SecretKey, Signature, Signer};
 
 #[cfg(feature = "memory")]
 pub mod memory;
@@ -34,17 +34,34 @@ pub trait Keychain {
         Ok(public)
     }
 
-    /// Sign the result of a given digest
+    /// Generate a public key from a secret key
     #[cfg(not(feature = "std"))]
-    fn sign(&self, height: Height, digest: Hasher) -> Result<Signature, Self::Error>;
+    fn public_with_key(secret: &SecretKey) -> PublicKey;
+
+    /// Generate a public key from a secret key
+    #[cfg(feature = "std")]
+    fn public_with_key(secret: &SecretKey) -> PublicKey {
+        secret.public_key()
+    }
 
     /// Sign the result of a given digest
-    #[cfg(feature = "std")]
     fn sign(&self, height: Height, digest: Hasher) -> Result<Signature, Self::Error> {
         let normalized = fuel_crypto::Message::from(digest);
         let signature = self.signer().sign(&height, &normalized)?;
 
         Ok(signature)
+    }
+
+    /// Sign the result of a given digest with a provided key
+    #[cfg(not(feature = "std"))]
+    fn sign_with_key(secret: &SecretKey, digest: Hasher) -> Signature;
+
+    /// Sign the result of a given digest with a provided key
+    #[cfg(feature = "std")]
+    fn sign_with_key(secret: &SecretKey, digest: Hasher) -> Signature {
+        let normalized = fuel_crypto::Message::from(digest);
+
+        Signature::sign(secret, &normalized)
     }
 
     /// Verify the signature against the result of a given digest

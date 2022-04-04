@@ -22,6 +22,7 @@ tracing = { version = "0.1", default-features = false, optional = true }
 [dev-dependencies]
 rand = { version = "0.8", default-features = false, features = [ "std_rng" ] }
 tokio = { version = "1.17", features = [ "full" ] }
+yaml-rust = "0.4"
 
 [features]
 default = [
@@ -42,6 +43,6 @@ path = "tests/consensus.rs"
 required-features = [ "tokio-reactor" ]
 
 [[test]]
-name = "reactor"
-path = "tests/reactor.rs"
+name = "vectors"
+path = "tests/vectors.rs"
 required-features = [ "std" ]

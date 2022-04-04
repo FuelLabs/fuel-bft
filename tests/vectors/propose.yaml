@@ -1,0 +1,135 @@
+# Initialize the node with the default password
+- initializeDefault
+
+# Setup initial validators
+- addDefaultValidators:
+    height: 0
+    validity: 4
+
+# Run a heartbeat and expect a block request
+- heartbeat
+- expectBlockRequest:
+    height: 0
+
+# Authorize the block with a given seed
+- authorizeBlockPropose:
+    blockSeed: some cool block with lots of txs
+    height: 0
+
+# Run the heartbeat and expect the reactor to resolve the commit
+- heartbeat
+- expectVote:
+    blockSeed: some cool block with lots of txs
+    height: 0
+    round: 0
+    step: propose
+    validator:
+      name: defaultNode
+- expectVote:
+    blockSeed: some cool block with lots of txs
+    height: 0
+    round: 0
+    step: commit
+    validator:
+      name: defaultNode
+
+# Start a new round
+- assertHeight: 1
+- assertValidatorIsLeader:
+    validator:
+      name: defaultValidatorA
+- authorizeBlock:
+    blockSeed: another block
+    height: 1
+
+# Assert the step of the proposer
+- vote:
+    blockSeed: another block
+    height: 1
+    round: 0
+    secret:
+      name: defaultValidatorA
+    step: propose
+- heartbeat
+- assertStep:
+    validator:
+      name: defaultValidatorA
+    height: 1
+    round: 0
+    step: propose
+
+# Send the commit for the proposer
+- vote:
+    blockSeed: another block
+    height: 1
+    round: 0
+    secret:
+      name: defaultValidatorA
+    step: commit
+- heartbeat
+- assertStep:
+    validator:
+      name: defaultValidatorA
+    height: 1
+    round: 0
+    step: commit
+
+# Assert the step of the node
+- heartbeat
+- assertStep:
+    validator:
+      name: defaultNode
+    height: 1
+    round: 0
+    step: prevote
+- expectVote:
+    blockSeed: another block
+    height: 1
+    round: 0
+    step: prevote
+    validator:
+      name: defaultNode
+
+# With another vote, it should be enough to achieve BFT for prevote
+- vote:
+    blockSeed: another block
+    height: 1
+    round: 0
+    secret:
+      name: defaultValidatorB
+    step: prevote
+- heartbeat
+- assertStep:
+    validator:
+      name: defaultNode
+    height: 1
+    round: 0
+    step: precommit
+- expectVote:
+    blockSeed: another block
+    height: 1
+    round: 0
+    step: precommit
+    validator:
+      name: defaultNode
+
+# With another vote, it should be enough to achieve BFT for precommit
+- vote:
+    blockSeed: another block
+    height: 1
+    round: 0
+    secret:
+      name: defaultValidatorC
+    step: precommit
+- heartbeat
+- expectVote:
+    blockSeed: another block
+    height: 1
+    round: 0
+    step: commit
+    validator:
+      name: defaultNode
+- expectCommit:
+    blockSeed: another block
+    height: 1
+    round: 0

@@ -70,7 +70,7 @@ impl Reactor {
         let elapsed = elapsed.whole_milliseconds() as u128;
 
         let committed_rounds = self.metadata.committed_rounds() as u128;
-        let committed_ms = committed_rounds * self.consensus;
+        let committed_ms = committed_rounds.saturating_sub(1) * self.consensus;
 
         let remainder_ms = elapsed.saturating_sub(committed_ms);
         let round = remainder_ms / self.consensus;
@@ -78,9 +78,29 @@ impl Reactor {
         round as Round
     }
 
+    /// Evaluate the consensus step of a validator for a given round
+    pub fn validator_step(&self, height: Height, round: Round, public: &PublicKey) -> Option<Step> {
+        self.metadata.validator_step(height, round, public)
+    }
+
     /// Attempt a forced commit to a round.
-    pub fn commit(&mut self, height: Height, round: Round) -> bool {
-        self.metadata.commit(height, round)
+    pub async fn commit<M>(&mut self, moderator: &mut M, height: Height, round: Round) -> bool
+    where
+        M: Moderator,
+    {
+        let committed = self.metadata.commit(height, round);
+
+        if committed {
+            let commit = Message::Event(Event::Commit {
+                height,
+                round,
+                block_id: Bytes32::zeroed(),
+            });
+
+            moderator.send(commit, self.timeout).await;
+        }
+
+        committed
     }
 
     /// Compute the round leader for the current height.
@@ -125,7 +145,11 @@ impl Reactor {
         self.metadata.add_validator(validator, height, validity);
     }
 
-    pub(crate) async fn propose<K, M>(&mut self, keychain: &K, moderator: &M) -> Result<(), Error>
+    pub(crate) async fn propose<K, M>(
+        &mut self,
+        keychain: &K,
+        moderator: &mut M,
+    ) -> Result<(), Error>
     where
         K: Keychain,
         M: Moderator,
@@ -190,7 +214,7 @@ impl Reactor {
     pub(crate) async fn upgrade_step<K, M>(
         &mut self,
         keychain: &K,
-        moderator: &M,
+        moderator: &mut M,
         height: Height,
         round: Round,
         block_id: Bytes32,
@@ -346,7 +370,7 @@ impl Reactor {
 
         let validators = self.metadata.validators_at_height_count(height);
         let is_bft = Consensus::is_bft(validators);
-        let validator_step = self.metadata.validator_step(height, round, validator);
+        let validator_step = self.validator_step(height, round, validator);
 
         match validator_step {
             // Can discard any previous state since it won't affect the current consensus state
@@ -462,7 +486,7 @@ impl Reactor {
             consensus
         );
 
-        let current_step = self.metadata.validator_step(height, round, public.as_ref());
+        let current_step = self.validator_step(height, round, public.as_ref());
 
         match consensus {
             Consensus::Inconclusive if current_step.is_none() => {
@@ -565,7 +589,7 @@ impl Reactor {
     pub(crate) async fn receive_request<K, M>(
         &mut self,
         keychain: &K,
-        moderator: &M,
+        moderator: &mut M,
         request: Request,
     ) where
         K: Keychain,
@@ -574,7 +598,7 @@ impl Reactor {
         let response = match request {
             Request::Commit { id, height, round } => Response::Commit {
                 id,
-                committed: self.metadata.commit(height, round),
+                committed: self.commit(moderator, height, round).await,
             },
 
             Request::Identity { id, height } => Response::Identity {
@@ -609,7 +633,7 @@ impl Reactor {
                     .unwrap_or_default()
                     .map(|p| p.into_owned())
                     .unwrap_or_default();
-                let step = self.metadata.validator_step(height, round, &public);
+                let step = self.validator_step(height, round, &public);
 
                 Response::Round {
                     id,
@@ -626,7 +650,8 @@ impl Reactor {
         moderator.send(response, self.timeout).await;
     }
 
-    pub(crate) async fn receive<K, M>(&mut self, keychain: &K, moderator: &mut M, message: Message)
+    /// Receive a new message, mutating the internal state
+    pub async fn receive<K, M>(&mut self, keychain: &K, moderator: &mut M, message: Message)
     where
         K: Keychain,
         M: Moderator,

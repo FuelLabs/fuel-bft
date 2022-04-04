@@ -1,6 +1,6 @@
 use crate::{Error, Height, Keychain, Round, Step};
 
-use fuel_crypto::{Hasher, PublicKey, Signature};
+use fuel_crypto::{Hasher, PublicKey, SecretKey, Signature};
 use fuel_types::Bytes32;
 
 /// A vote from a validator.
@@ -103,6 +103,24 @@ impl Vote {
         let vote = Self::new(validator, signature, height, round, block_id, step);
 
         Ok(vote)
+    }
+
+    /// Produce a guaranteed correctness signed vote
+    pub fn signed_with_key<K>(
+        secret: &SecretKey,
+        height: Height,
+        round: Round,
+        block_id: Bytes32,
+        step: Step,
+    ) -> Self
+    where
+        K: Keychain,
+    {
+        let digest = Self::_digest(Hasher::default(), height, round, &block_id, step);
+        let validator = K::public_with_key(secret);
+        let signature = K::sign_with_key(secret, digest);
+
+        Self::new(validator, signature, height, round, block_id, step)
     }
 
     /// Validate the signature of the vote
