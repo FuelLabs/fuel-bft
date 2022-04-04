@@ -33,7 +33,7 @@ default = [
     "tokio-reactor"
 ]
 memory = [ "fuel-crypto/random", "rand", "std" ]
-std = [ "fuel-crypto/std", "fuel-types/std", "time/std" ]
+std = [ "fuel-crypto/std", "fuel-types/std", "time/std", "tracing/std" ]
 tokio-reactor = [ "memory", "std", "tokio" ]
 trace = [ "tracing" ]
 
