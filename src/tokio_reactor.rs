@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use core::time::Duration;
-use std::thread;
 use std::time::SystemTime;
 
 /// Communication bridge with a consensus reactor.
@@ -100,7 +99,7 @@ impl TokioReactor {
                 }
             }
 
-            thread::sleep(Duration::from_secs(1));
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
