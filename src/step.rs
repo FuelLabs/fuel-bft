@@ -1,7 +1,5 @@
-use core::cmp::Ordering;
-
 /// Step of the consensus protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum Step {
     /// A round just started without a proposal from a leader.
@@ -14,36 +12,6 @@ pub enum Step {
     Precommit = 0x03,
     /// The round is finalized with a commit.
     Commit = 0x04,
-}
-
-impl PartialOrd for Step {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (self, other) {
-            (Self::NewRound, Self::NewRound) => Some(Ordering::Equal),
-            (Self::NewRound, _) => Some(Ordering::Less),
-
-            (Self::Propose, Self::NewRound) => Some(Ordering::Greater),
-            (Self::Propose, Self::Propose) => Some(Ordering::Equal),
-            (Self::Propose, _) => Some(Ordering::Less),
-
-            (Self::Prevote, Self::NewRound) => Some(Ordering::Greater),
-            (Self::Prevote, Self::Propose) => Some(Ordering::Greater),
-            (Self::Prevote, Self::Prevote) => Some(Ordering::Equal),
-            (Self::Prevote, _) => Some(Ordering::Less),
-
-            (Self::Precommit, Self::NewRound) => Some(Ordering::Greater),
-            (Self::Precommit, Self::Propose) => Some(Ordering::Greater),
-            (Self::Precommit, Self::Prevote) => Some(Ordering::Greater),
-            (Self::Precommit, Self::Precommit) => Some(Ordering::Equal),
-            (Self::Precommit, _) => Some(Ordering::Less),
-
-            (Self::Commit, Self::NewRound) => Some(Ordering::Greater),
-            (Self::Commit, Self::Propose) => Some(Ordering::Greater),
-            (Self::Commit, Self::Prevote) => Some(Ordering::Greater),
-            (Self::Commit, Self::Precommit) => Some(Ordering::Greater),
-            (Self::Commit, Self::Commit) => Some(Ordering::Equal),
-        }
-    }
 }
 
 impl Step {
