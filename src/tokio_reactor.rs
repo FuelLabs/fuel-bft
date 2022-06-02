@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use core::time::Duration;
-use std::time::SystemTime;
+use std::time::Instant;
 
 /// Communication bridge with a consensus reactor.
 pub struct TokioReactor {
@@ -40,7 +40,7 @@ impl TokioReactor {
         let id = request.id();
         let request = Message::Request(request);
 
-        let start = SystemTime::now();
+        let start = Instant::now();
         let mut requeue = Vec::new();
 
         self.sender
@@ -56,30 +56,15 @@ impl TokioReactor {
         );
 
         loop {
-            match start.elapsed() {
-                Err(_e) => {
-                    requeue.into_iter().for_each(|m| {
-                        self.outbound.try_send(m).ok();
-                    });
+            if start.elapsed() > self.timeout {
+                requeue.into_iter().for_each(|m| {
+                    self.outbound.try_send(m).ok();
+                });
 
-                    #[cfg(feature = "trace")]
-                    tracing::debug!("request {} failed with error {}", id, _e);
+                #[cfg(feature = "trace")]
+                tracing::debug!("request {} failed with timeout", id);
 
-                    return Err(Error::ResourceNotAvailable);
-                }
-
-                Ok(elapsed) if elapsed > self.timeout => {
-                    requeue.into_iter().for_each(|m| {
-                        self.outbound.try_send(m).ok();
-                    });
-
-                    #[cfg(feature = "trace")]
-                    tracing::debug!("request {} failed with timeout", id);
-
-                    return Err(Error::ResourceNotAvailable);
-                }
-
-                _ => (),
+                return Err(Error::ResourceNotAvailable);
             }
 
             #[cfg(feature = "trace")]
@@ -121,7 +106,7 @@ impl TokioReactor {
             keychain.insert(.., password);
 
             loop {
-                let start = std::time::SystemTime::now();
+                let start = Instant::now();
 
                 if let Err(_e) = reactor.heartbeat(&keychain, &mut moderator).await {
                     #[cfg(feature = "trace")]
@@ -132,7 +117,7 @@ impl TokioReactor {
                     break;
                 }
 
-                let elapsed = start.elapsed().map(|d| d.as_millis()).unwrap_or(0);
+                let elapsed = start.elapsed().as_millis();
                 let interval = heartbeat.saturating_sub(elapsed);
                 let interval = std::time::Duration::from_millis(interval as u64);
 
