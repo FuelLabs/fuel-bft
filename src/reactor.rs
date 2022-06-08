@@ -690,8 +690,7 @@ impl Reactor {
                 // FIXME maybe clean all queues?
                 moderator.send(idle, self.timeout).await;
 
-                // Lock the thread until next inbound notification
-                if let Ok(Some(m)) = moderator.inbound_blocking() {
+                if let Ok(Some(m)) = moderator.inbound().await {
                     moderator.rebound(m, self.timeout).await.ok();
                 }
 
