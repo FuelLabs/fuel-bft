@@ -40,9 +40,6 @@ impl TokioReactor {
         let id = request.id();
         let request = Message::Request(request);
 
-        let start = Instant::now();
-        let mut requeue = Vec::new();
-
         self.sender
             .send_timeout(request, self.timeout)
             .await
@@ -55,36 +52,32 @@ impl TokioReactor {
             self.timeout
         );
 
+        tokio::time::timeout(self.timeout, self._request(id))
+            .await
+            .map_err(|_e| Error::ResourceNotAvailable)?
+    }
+
+    async fn _request(&mut self, id: u64) -> Result<Response, Error> {
         loop {
-            if start.elapsed() > self.timeout {
-                requeue.into_iter().for_each(|m| {
-                    self.outbound.try_send(m).ok();
-                });
+            match self.listener.recv().await {
+                Some(Message::Response(r)) if r.id() == id => return Ok(r),
+                Some(m) => {
+                    if let Err(_e) = self.outbound.send(m).await {
+                        #[cfg(feature = "trace")]
+                        tracing::trace!(
+                            "message {:?} discarded; outbound resource exhausted: {}",
+                            m,
+                            _e
+                        );
 
-                #[cfg(feature = "trace")]
-                tracing::debug!("request {} failed with timeout", id);
-
-                return Err(Error::ResourceNotAvailable);
-            }
-
-            #[cfg(feature = "trace")]
-            tracing::trace!("attempting to receive request {}", id);
-
-            while let Some(m) = self.listener.try_recv().ok() {
-                match m {
-                    Message::Response(r) if r.id() == id => {
-                        requeue.into_iter().for_each(|m| {
-                            self.outbound.try_send(m).ok();
-                        });
-
-                        return Ok(r);
+                        return Err(Error::ResourceNotAvailable);
                     }
-
-                    _ => requeue.push(m),
+                }
+                None => {
+                    #[cfg(feature = "trace")]
+                    tracing::trace!("attempting to receive request {}", id);
                 }
             }
-
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
