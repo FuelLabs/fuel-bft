@@ -64,7 +64,7 @@ impl TokioReactor {
                 Some(m) => {
                     if let Err(_e) = self.outbound.send(m).await {
                         #[cfg(feature = "trace")]
-                        tracing::trace!(
+                        tracing::error!(
                             "message {:?} discarded; outbound resource exhausted: {}",
                             m,
                             _e
