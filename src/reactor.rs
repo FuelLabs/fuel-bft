@@ -125,8 +125,7 @@ impl Reactor {
         let leader = self
             .metadata
             .validators_at_height(height)
-            .skip(index as usize)
-            .next()
+            .nth(index as usize)
             .ok_or(Error::ValidatorNotFound)?;
 
         #[cfg(feature = "trace")]
@@ -342,7 +341,7 @@ impl Reactor {
             proposed_step
         );
 
-        if !self.metadata.validate::<K>(&vote).is_ok() {
+        if self.metadata.validate::<K>(&vote).is_err() {
             #[cfg(feature = "trace")]
             tracing::trace!(
                 "dropping received invalid vote - height {}, round {}, author {:08x}, step: {:?}",
