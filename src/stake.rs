@@ -16,7 +16,7 @@ use stake_keys::StakeKeys;
 /// signatures with the chosen protocol.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Stake {
-    /// One-time key for a height range
+    /// Hot key for a height range
     pub key: PublicKey,
     /// Staked value
     pub value: u64,
