@@ -126,10 +126,7 @@ impl Iterator for TokioReactor {
     type Item = Message;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.listener.try_recv() {
-            Ok(m) => Some(m),
-            Err(_) => None,
-        }
+        self.listener.try_recv().ok()
     }
 }
 
