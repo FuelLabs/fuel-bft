@@ -6,9 +6,9 @@ use hashbrown::HashMap;
 
 use core::ops::{Range, RangeBounds};
 
-mod stake_keys;
+mod height_stakes;
 
-use stake_keys::StakeKeys;
+use height_stakes::HeightStakes;
 
 /// Registered stake for a validator
 ///
@@ -22,16 +22,16 @@ pub struct Stake {
     pub value: u64,
 }
 
-/// A stake pool, mapping a validator identity to a set of bft stakes.
+/// A stake pool, mapping a validator identity to a set of height stakes.
 ///
-/// The validator identity is agnostic to this library and the only requirements is it fits in
+/// The validator identity is agnostic to this library and the only requirement is it fits in
 /// [`Bytes64`]
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct StakePool {
-    validators: HashMap<Bytes64, StakeKeys>,
+pub struct ValidatorStakes {
+    validators: HashMap<Bytes64, HeightStakes>,
 }
 
-impl StakePool {
+impl ValidatorStakes {
     /// Add a stake that will be valid within the provided height bounds.
     ///
     /// The validator is the permanent identity of the staker, while the stake key is the volatile

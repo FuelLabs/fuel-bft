@@ -39,7 +39,7 @@ pub use error::Error;
 pub use keychain::Keychain;
 pub use moderator::Moderator;
 pub use reactor::{Config, Event, Message, Notification, Reactor, Request, Response};
-pub use stake::{Stake, StakePool};
+pub use stake::{Stake, ValidatorStakes};
 pub use step::Step;
 pub use vote::Vote;
 

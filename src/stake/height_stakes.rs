@@ -8,12 +8,15 @@ use alloc::borrow::ToOwned;
 use core::cmp;
 use core::ops::{Bound, Range, RangeBounds};
 
+/// Mapping of a height of heights to a given stake.
+///
+/// There is a logical guarantee that the ranges will not intersect for this data structure.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct StakeKeys {
+pub struct HeightStakes {
     keys: HashMap<Range<Height>, Stake>,
 }
 
-impl StakeKeys {
+impl HeightStakes {
     /// The provided key will be used to verify the consensus signatures. It might diverge from the
     /// constant validator identifier that exists for the canonical stake contract since a key
     /// rotation strategy is possible.
@@ -76,8 +79,7 @@ impl StakeKeys {
     pub(super) fn fetch(&self, height: Height) -> Option<&Stake> {
         self.keys
             .iter()
-            .filter_map(|(range, stake)| range.contains(&height).then(|| stake))
-            .next()
+            .find_map(|(range, stake)| range.contains(&height).then(|| stake))
     }
 
     /// Remove all entries with the provided key
@@ -132,37 +134,37 @@ fn stake_keys_intersect_and_merge() {
     let ay = Stake { key: a, value: y };
     let by = Stake { key: b, value: y };
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(0..2, ax).expect("no intersect");
     keys.add_stake_range(3..5, ay).expect("no intersect");
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(0..2, ax).expect("no intersect");
     keys.add_stake_range(3..5, by).expect("no intersect");
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(0..2, ax).expect("no intersect");
     keys.add_stake_range(2..4, ay).expect("no intersect");
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(0..2, ax).expect("no intersect");
     keys.add_stake_range(2..4, by).expect("no intersect");
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(0..2, ax).expect("no intersect");
     keys.add_stake_range(1..3, ay).err().expect("intersect");
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(1..3, ax).expect("no intersect");
     keys.add_stake_range(0..2, ay).err().expect("intersect");
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(0..2, ax).expect("no intersect");
     keys.add_stake_range(1..3, ax).expect("merge");
     let stake = keys.keys.get(&(0..3)).expect("merged stake");
     assert_eq!(&Stake { key: a, value: x }, stake);
 
-    let mut keys = StakeKeys::default();
+    let mut keys = HeightStakes::default();
     keys.add_stake_range(1..3, ax).expect("no intersect");
     keys.add_stake_range(0..2, ax).expect("merge");
     let stake = keys.keys.get(&(0..3)).expect("merged stake");
