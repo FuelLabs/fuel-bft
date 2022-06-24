@@ -31,6 +31,7 @@ mod keychain;
 mod metadata;
 mod moderator;
 mod reactor;
+mod stake;
 mod step;
 mod vote;
 
@@ -38,6 +39,7 @@ pub use error::Error;
 pub use keychain::Keychain;
 pub use moderator::Moderator;
 pub use reactor::{Config, Event, Message, Notification, Reactor, Request, Response};
+pub use stake::{Stake, ValidatorStakes};
 pub use step::Step;
 pub use vote::Vote;
 

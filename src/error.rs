@@ -1,3 +1,5 @@
+use crate::Height;
+
 use core::convert::Infallible;
 use core::fmt;
 
@@ -6,6 +8,14 @@ use core::fmt;
 pub enum Error {
     /// The block validation failed
     BlockValidation,
+
+    /// An intersecting stake cannot be added to the list.
+    DuplicatedStake {
+        /// Initial height of the conflicting stake.
+        height: Height,
+        /// The conflicting stake will be valid before this height.
+        valid_before: Height,
+    },
 
     /// Failed to define elapsed time since genesis
     ElapsedTimeFailure,
